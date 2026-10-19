@@ -1,0 +1,14 @@
+LeapSign / LeapSign Firmador v2
+Copyright (C) 2026 Pablo Martínez (PSMM) — pabloun@gmail.com
+
+El código original de este proyecto se ofrece bajo GNU AGPL versión 3
+(SPDX: AGPL-3.0-only). Consulta LICENSE. Sin garantía, en la medida permitida
+por la ley. Las dependencias y materiales de terceros conservan sus propias
+licencias y atribuciones. Los PDF de usuarios no se licencian por esta cláusula.
+
+Antes de ofrecer v2 por red, el operador debe publicar y enlazar desde la
+interfaz el código fuente correspondiente a la versión exacta desplegada,
+incluidos cambios y scripts de construcción/configuración sin secretos.
+
+LeapSign no es el aplicativo oficial FirmaEC y no está avalado por sus autores.
+No se ha incorporado código de los repositorios de FirmaEC en esta entrega.

@@ -58,3 +58,13 @@ Proyecto PSMM, de libre uso. Contacto: pabloun@gmail.com.
 
 Los documentos procesados pertenecen a sus respectivos titulares. Consulta las
 páginas `/privacidad`, `/seguridad` y `/condiciones` en la aplicación.
+
+## LeapSign Firmador v2 — desarrollo aislado
+
+La rama v2 prepara intenciones de firma y validación criptográfica independiente.
+No está publicada ni habilitada. Su destino previsto es `leapsign.app`, sin
+modificar el despliegue actual. Estado y bloqueos: [auditoría](docs/v2/audit.md),
+[ADR](docs/v2/ADR-001-signing.md), [pruebas de interoperabilidad](docs/v2/interoperability.md)
+y [desarrollo/publicación](docs/v2/development-and-release.md).
+
+Código original bajo [AGPLv3](LICENSE); atribuciones y condiciones en [NOTICE](NOTICE).

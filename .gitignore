@@ -3,3 +3,5 @@ dist/
 *.tsbuildinfo
 .env
 supabase/.temp/
+__pycache__/
+.pytest_cache/
