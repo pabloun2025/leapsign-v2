@@ -17,9 +17,13 @@ app = FastAPI(docs_url=None, redoc_url=None, openapi_url=None)
 slots = asyncio.Semaphore(1)
 
 
+def enabled():
+    return (os.getenv("EXTERNAL_SIGNATURE_ENABLED") == "true" or os.getenv("DIRECT_P12_SIGNING_ENABLED") == "true") and os.getenv("FIRMAEC_COMPATIBILITY_PROFILE_ENABLED") == "true"
+
+
 def authorize(request):
     key = os.getenv("V2_VALIDATOR_TOKEN", "")
-    if os.getenv("EXTERNAL_SIGNATURE_ENABLED") != "true" or len(key) < 32 or not os.getenv("V2_TRUST_POLICY_FILE"):
+    if not enabled() or len(key) < 32 or not os.getenv("V2_TRUST_POLICY_FILE"):
         raise HTTPException(503, "VALIDATOR_DISABLED")
     if not hmac.compare_digest(request.headers.get("authorization", ""), "Bearer " + key):
         raise HTTPException(401, "UNAUTHORIZED")
@@ -27,7 +31,7 @@ def authorize(request):
 
 @app.get("/health")
 async def health():
-    return {"enabled": os.getenv("EXTERNAL_SIGNATURE_ENABLED") == "true", "policy": "leapsign-v2-strict-offline-1"}
+    return {"enabled": enabled(), "policy": "leapsign-v2-strict-offline-1"}
 
 
 @app.post("/validate")

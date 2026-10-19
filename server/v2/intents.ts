@@ -1,6 +1,7 @@
 import { createHash, randomBytes, randomUUID } from 'node:crypto';
 import type { SignatureAppearanceProfile, SignaturePosition, SigningIntent, SignatureValidationResult } from '../../src/v2/contracts';
 import { INTENT_LIFETIME_MS, MAX_PDF_BYTES } from '../../src/v2/policy';
+import {isPublicValidationReport} from '../../src/v2/public-data';
 
 export type CanonicalStage = { documentId: string; versionId: string; baseSha256: string; stageId: string; signerId: string; role: string; pageCount: number; pageWidth: number; pageHeight: number; expectedFingerprint?: string };
 export class SigningError extends Error {
@@ -26,7 +27,9 @@ export function issueIntent(stage: CanonicalStage, actorId: string, profile: Sig
 export function authorizeIntent(intent: SigningIntent, current: CanonicalStage, actorId: string, nonce: string, now = new Date()) {
   if (actorId !== intent.signerId || actorId !== current.signerId) throw new SigningError('NOT_YOUR_TURN');
   if (nonce !== intent.nonce) throw new SigningError('INTENT_UNAUTHORIZED');
-  if (now.getTime() >= Date.parse(intent.expiresAt)) throw new SigningError('INTENT_EXPIRED');
+  const issued = Date.parse(intent.issuedAt), expires = Date.parse(intent.expiresAt);
+  if (!Number.isFinite(issued) || !Number.isFinite(expires) || !Number.isFinite(now.getTime()) || expires <= issued || expires - issued > INTENT_LIFETIME_MS) throw new SigningError('INTENT_INVALID');
+  if (now.getTime() >= expires) throw new SigningError('INTENT_EXPIRED');
   if (!['signature_intent_issued', 'awaiting_local_signature'].includes(intent.state)) throw new SigningError('INTENT_UNAVAILABLE');
   if (current.documentId !== intent.documentId || current.versionId !== intent.versionId || current.baseSha256 !== intent.baseSha256 || current.stageId !== intent.stageId || current.role !== intent.role || current.expectedFingerprint !== intent.expectedFingerprint) throw new SigningError('CANONICAL_VERSION_CHANGED');
 }
@@ -37,7 +40,7 @@ export function validateCandidateBinding(intent: SigningIntent, canonical: Uint8
   return digest(signed);
 }
 export function assertValidationReport(intent: SigningIntent, signedHash: string, report: SignatureValidationResult) {
-  if (report.valid !== true || report.policy !== 'leapsign-v2-strict-offline-1' || report.baseSha256 !== intent.baseSha256 || report.signedSha256 !== signedHash || report.revocation !== 'good' || !report.certificate || report.signatureCount !== report.previousSignatureCount + 1) throw new SigningError('SIGNATURE_REJECTED');
+  if (!isPublicValidationReport(report) || report.valid !== true || report.baseSha256 !== intent.baseSha256 || report.signedSha256 !== signedHash || !report.certificate) throw new SigningError('SIGNATURE_REJECTED');
   if (intent.expectedFingerprint && report.certificate.fingerprint !== intent.expectedFingerprint) throw new SigningError('SIGNER_IDENTITY_MISMATCH');
 }
 

@@ -12,7 +12,8 @@ export class OfflineValidatorClient implements PrivatePdfValidator {
   }) {}
 
   async validate(canonical: Uint8Array, signed: Uint8Array, intent: SigningIntent): Promise<SignatureValidationResult> {
-    if (!signingFlags(this.config.flags).external || !signingFlags(this.config.flags).firmaecProfile) throw new SigningError('V2_DISABLED');
+    const flags = signingFlags(this.config.flags);
+    if ((!flags.external && !flags.direct) || !flags.firmaecProfile) throw new SigningError('V2_DISABLED');
     const url = new URL(this.config.url);
     if ((url.protocol !== 'https:' && !(url.protocol === 'http:' && url.hostname === '127.0.0.1')) || url.username || url.password || url.search || url.hash || url.pathname !== '/validate' || this.config.serviceToken.length < 32) throw new SigningError('VALIDATOR_CONFIGURATION_REQUIRED');
     if (canonical.length > MAX_PDF_BYTES || signed.length > MAX_PDF_BYTES) throw new SigningError('DOCUMENT_TOO_LARGE');

@@ -61,7 +61,7 @@ create function signing_v2.issue_intent(p_document uuid,p_actor uuid,p_id uuid,p
 returns signing_v2.intents language plpgsql security definer set search_path=signing_v2,pg_temp as $$
 declare d signing_v2.documents; s signing_v2.stages; v signing_v2.versions; result signing_v2.intents;
 begin
-  if not exists(select 1 from settings where external_enabled and profile_enabled) then raise exception 'V2_DISABLED'; end if;
+  if not exists(select 1 from settings where (external_enabled or direct_enabled) and profile_enabled) then raise exception 'V2_DISABLED'; end if;
   select * into d from documents where id=p_document and status='ready_for_signer' for update;
   if d.id is null then raise exception 'DOCUMENT_UNAVAILABLE'; end if;
   select * into s from stages where id=d.active_stage_id and document_id=d.id and status='ready_for_signer';
@@ -87,7 +87,7 @@ create function signing_v2.claim_intent(p_id uuid,p_actor uuid,p_nonce_hash text
 returns signing_v2.intents language plpgsql security definer set search_path=signing_v2,pg_temp as $$
 declare i signing_v2.intents; d signing_v2.documents;
 begin
-  if not exists(select 1 from settings where external_enabled and profile_enabled) then raise exception 'V2_DISABLED'; end if;
+  if not exists(select 1 from settings where (external_enabled or direct_enabled) and profile_enabled) then raise exception 'V2_DISABLED'; end if;
   select * into i from intents where id=p_id;
   -- Consistent lock order: document first, then intent. Serializes acceptance
   -- and new intent issuance across requests, not just within one JS process.
@@ -107,7 +107,7 @@ create function signing_v2.commit_validated(p_id uuid,p_candidate text,p_version
 returns uuid language plpgsql security definer set search_path=signing_v2,pg_temp as $$
 declare i signing_v2.intents; d signing_v2.documents; prior signing_v2.versions; next_stage uuid;
 begin
-  if not exists(select 1 from settings where external_enabled and profile_enabled) then raise exception 'V2_DISABLED'; end if;
+  if not exists(select 1 from settings where (external_enabled or direct_enabled) and profile_enabled) then raise exception 'V2_DISABLED'; end if;
   select * into i from intents where id=p_id;
   select * into d from documents where id=i.document_id for update;
   select * into i from intents where id=p_id for update;

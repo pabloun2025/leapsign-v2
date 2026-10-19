@@ -27,7 +27,7 @@ for (const name of assets.filter(name => name.endsWith('.js'))) {
 await copyFile(join(root, 'v2/preview/_headers'), join(output, '_headers'));
 await writeFile(join(output, 'robots.txt'), 'User-agent: *\nDisallow: /\n');
 await writeFile(join(output, 'release.json'), JSON.stringify({revision, mode: 'interface-only', builtAt: new Date().toISOString()}, null, 2));
-const notices = await Promise.all(['react', 'react-dom', 'scheduler'].map(async name => `${name}\n${await readFile(join(root, 'node_modules', name, 'LICENSE'), 'utf8')}`));
+const notices = await Promise.all(['react', 'react-dom', 'scheduler', 'pdfjs-dist'].map(async name => `${name}\n${await readFile(join(root, 'node_modules', name, 'LICENSE'), 'utf8')}`));
 await writeFile(join(output, 'THIRD-PARTY-NOTICES.txt'), notices.join('\n\n---\n\n'));
 const source = git('archive', '--format=zip', 'HEAD');
 if (source.length > 24 * 1024 * 1024) throw new Error('Source asset exceeds the preview size limit');

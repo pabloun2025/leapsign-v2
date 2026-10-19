@@ -9,6 +9,12 @@ describe('v2 private validator boundary',()=>{
   const client=new OfflineValidatorClient({flags:{},url:'https://validator.invalid/validate',serviceToken:'x'.repeat(32),beforeValidation:quota,fetch:fetcher});
   await expect(client.validate(bytes,bytes,intent)).rejects.toThrow('V2_DISABLED');expect(fetcher).not.toHaveBeenCalled();expect(quota).not.toHaveBeenCalled();
  });
+ it('allows independent validation with direct enabled and external disabled',async()=>{
+  const fetcher=vi.fn(async()=>Response.json({valid:false}));const quota=vi.fn(async()=>{});
+  const client=new OfflineValidatorClient({flags:{DIRECT_P12_SIGNING_ENABLED:'true',EXTERNAL_SIGNATURE_ENABLED:'false',FIRMAEC_COMPATIBILITY_PROFILE_ENABLED:'true'},url:'https://validator.invalid/validate',serviceToken:'x'.repeat(32),beforeValidation:quota,fetch:fetcher});
+  await expect(client.validate(bytes,bytes,intent)).rejects.toThrow('INVALID_VALIDATION_REPORT');
+  expect(quota).toHaveBeenCalledOnce();expect(fetcher).toHaveBeenCalledOnce();
+ });
  it('fails closed before the HTTP call if the budget cannot be reserved',async()=>{
   const fetcher=vi.fn();const client=new OfflineValidatorClient({flags:{EXTERNAL_SIGNATURE_ENABLED:'true',FIRMAEC_COMPATIBILITY_PROFILE_ENABLED:'true'},url:'https://validator.invalid/validate',serviceToken:'x'.repeat(32),beforeValidation:async()=>{throw Error('budget unavailable');},fetch:fetcher});
   await expect(client.validate(bytes,bytes,intent)).rejects.toThrow('budget unavailable');expect(fetcher).not.toHaveBeenCalled();

@@ -23,6 +23,45 @@ class ValidationFailure(Exception):
     pass
 
 
+def require_passive_pdf(reader):
+    """Inspect parsed names, including compressed/orphan historical objects.
+
+    Do not scan arbitrary text or CMS bytes for marker substrings: a document
+    may legitimately discuss JavaScript. Never rewrite or sanitise signed bytes.
+    Parsing must run within the private worker's memory/CPU limits.
+    """
+    dangerous = {"/JavaScript", "/JS", "/Launch", "/EmbeddedFiles", "/EmbeddedFile",
+                 "/RichMedia", "/RichMediaContent", "/SubmitForm", "/ImportData", "/GoToR", "/GoToE", "/XFA"}
+    if reader.xrefs.total_revisions > 128:
+        raise ValidationFailure("PDF_COMPLEXITY_LIMIT")
+    examined = 0
+    for revision in range(reader.xrefs.total_revisions):
+        resolver = reader.get_historical_resolver(revision)
+        pending = list(reader.xrefs.explicit_refs_in_revision(revision))
+        seen_refs = set()
+        while pending:
+            examined += 1
+            if examined > 200_000:
+                raise ValidationFailure("PDF_COMPLEXITY_LIMIT")
+            value = pending.pop()
+            if isinstance(value, (generic.Reference, generic.IndirectObject)):
+                ref = value.reference if isinstance(value, generic.IndirectObject) else value
+                key = (ref.idnum, ref.generation)
+                if key in seen_refs:
+                    continue
+                seen_refs.add(key)
+                pending.append(resolver.get_object(ref))
+            elif isinstance(value, generic.NameObject):
+                if str(value) in dangerous:
+                    raise ValidationFailure("UNSAFE_PDF_CONTENT")
+            elif isinstance(value, (generic.DictionaryObject, generic.ArrayObject)):
+                if isinstance(value, generic.DictionaryObject):
+                    for key, item in value.items():
+                        pending.extend((key, item))
+                else:
+                    pending.extend(value)
+
+
 def prepare_canonical(pdf: bytes) -> bytes:
     """Owner-upload preparation only, before issuing any signing intention.
 
@@ -35,6 +74,7 @@ def prepare_canonical(pdf: bytes) -> bytes:
         reader = PdfFileReader(BytesIO(pdf), strict=True)
         if reader.encrypted:
             raise ValidationFailure("DOCUMENT_MISMATCH")
+        require_passive_pdf(reader)
         if reader.embedded_regular_signatures:
             return pdf
         if b"/ByteRange" in pdf:
@@ -83,6 +123,8 @@ def validate_pair(previous: bytes, candidate: bytes, *, base_sha256: str,
         after = PdfFileReader(BytesIO(candidate), strict=True)
         if before.encrypted or after.encrypted or before.root["/Pages"]["/Count"] != after.root["/Pages"]["/Count"]:
             raise ValidationFailure("DOCUMENT_MISMATCH")
+        require_passive_pdf(before)
+        require_passive_pdf(after)
         old = before.embedded_regular_signatures
         signatures = after.embedded_regular_signatures
         if len(signatures) != len(old) + 1:

@@ -1,6 +1,7 @@
 import {useEffect, useId, useRef, useState, useSyncExternalStore, type FormEvent, type ReactNode} from 'react';
 import type {PrepareSigningInput} from './contracts';
 import {SigningWorkflow} from './signing-workflow';
+import {PdfPreview} from './PdfPreview';
 import './signing-panel.css';
 
 /** Reusable v2 screen; not mounted in v1. A trusted PDF renderer may be supplied
@@ -16,6 +17,8 @@ export function SigningPanel({flow, preparation, title, preview}: {
   const [password, setPassword] = useState('');
   const [visible, setVisible] = useState(false);
   const [fileError, setFileError] = useState('');
+  const [canonical, setCanonical] = useState<Uint8Array>();
+  const [previewReady, setPreviewReady] = useState(false);
   const dialog = useRef<HTMLDialogElement>(null);
   const certInput = useRef<HTMLInputElement>(null);
   const externalInput = useRef<HTMLInputElement>(null);
@@ -27,7 +30,7 @@ export function SigningPanel({flow, preparation, title, preview}: {
 
   useEffect(() => {
     const bytes = flow.canonicalCopy();
-    setDownloaded(false); setReviewed(false);
+    setDownloaded(false); setReviewed(false); setPreviewReady(false); setCanonical(bytes);
     if (!bytes) {setUrl(undefined); return;}
     const objectUrl = URL.createObjectURL(new Blob([new Uint8Array(bytes).buffer], {type: 'application/pdf'}));
     setUrl(objectUrl);
@@ -78,15 +81,15 @@ export function SigningPanel({flow, preparation, title, preview}: {
       {url && !['cancelled', 'expired', 'failed'].includes(state.phase) && <div className="ls-v2-layout">
         <div className="ls-v2-document">
           <div className="ls-v2-document-title"><span>Documento para revisar</span><span>PDF</span></div>
-          {preview ?? <div className="ls-v2-preview-fallback"><svg viewBox="0 0 48 60" aria-hidden="true"><path d="M8 2h23l10 11v45H8zM30 2v13h11M15 26h19M15 34h19M15 42h12"/></svg><strong>{state.filename}</strong><p>Descarga el PDF y revisa su contenido antes de continuar.</p></div>}
+          {preview ?? (canonical && <PdfPreview pdf={canonical} position={preparation.position} onReviewedPage={() => setPreviewReady(true)} onUnavailable={() => setPreviewReady(false)}/>)}
           <a className="ls-v2-download" href={url} download={state.filename} onClick={() => setDownloaded(true)}>Descargar documento PDF <span aria-hidden="true">↓</span></a>
         </div>
         <div className="ls-v2-actions">
           {state.phase === 'validated' ? <div className="ls-v2-success"><span aria-hidden="true">✓</span><h2>Tu firma está guardada</h2><p>Ya puedes cerrar esta página.</p></div> : <>
             <h2>Firma el documento</h2>
-            <label className="ls-v2-review"><input type="checkbox" checked={reviewed} disabled={!ready || (!preview && !downloaded)} onChange={event => setReviewed(event.target.checked)}/><span>He revisado el PDF y quiero firmarlo.</span></label>
+            <label className="ls-v2-review"><input type="checkbox" checked={reviewed} disabled={!ready || (!preview && !previewReady && !downloaded)} onChange={event => setReviewed(event.target.checked)}/><span>He revisado el PDF y quiero firmarlo.</span></label>
             {state.directEnabled && <div className="ls-v2-method"><h3>Con tu certificado</h3><p>Usa un archivo .p12 o .pfx. No necesitas descargar y volver a subir el PDF firmado.</p><button type="button" disabled={!ready || !reviewed} onClick={() => {clearCertificate(); dialog.current?.showModal();}}>Firmar con certificado</button><small>El certificado y su contraseña no se envían al servidor. No admite tokens físicos.</small></div>}
-            {state.externalEnabled && <form className="ls-v2-method ls-v2-external" onSubmit={external}><h3>{state.directEnabled ? 'O usa tu aplicación de firma' : 'Con tu aplicación de firma'}</h3><p>Firma el PDF descargado con FirmaEC, Adobe u otra herramienta y carga el resultado.</p><label htmlFor={`${id}-external`}>PDF firmado</label><input id={`${id}-external`} ref={externalInput} type="file" accept=".pdf,application/pdf" required disabled={!ready || !reviewed}/><button type="submit" disabled={!ready || !reviewed}>Subir y validar firma</button></form>}
+            {state.externalEnabled && <form className="ls-v2-method ls-v2-external" onSubmit={external}><h3>{state.directEnabled ? 'O usa tu aplicación de firma' : 'Con tu aplicación de firma'}</h3><p>Firma el PDF descargado con FirmaEC, Adobe u otra herramienta y carga el resultado.</p><label htmlFor={`${id}-external`}>PDF firmado</label><input id={`${id}-external`} ref={externalInput} type="file" accept=".pdf,application/pdf" required disabled={!ready || !reviewed || !downloaded}/><button type="submit" disabled={!ready || !reviewed || !downloaded}>Subir y validar firma</button></form>}
             {busy && <p className="ls-v2-progress" role="status"><span aria-hidden="true"/>{state.phase === 'validating' ? 'Comprobando la firma y guardando el documento…' : 'Firmando en este dispositivo…'}</p>}
             {feedback}
             <button className="ls-v2-secondary" type="button" disabled={state.phase === 'validating'} onClick={() => flow.cancel()}>Cancelar</button>

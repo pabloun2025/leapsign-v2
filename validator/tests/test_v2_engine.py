@@ -156,3 +156,48 @@ def test_first_signature_cannot_replace_page_content(sample):
 def test_canonical_preparation_never_rewrites_signed_pdf(sample):
     assert prepare_canonical(sample["first"]) == sample["first"]
     assert prepare_canonical(sample["base"]) == sample["base"]
+
+
+def active_pdf(sample, *, orphan=False, compressed=False):
+    writer = IncrementalPdfFileWriter(BytesIO(sample["base"]))
+    action = generic.DictionaryObject({generic.pdf_name("/S"): generic.pdf_name("/JavaScript"), generic.pdf_name("/JS"): generic.TextStringObject("void    0;")})
+    if compressed:
+        writer.stream_xrefs = True
+        stream = writer.prepare_object_stream()
+        ref = writer.add_object(action, obj_stream=stream)
+    else:
+        ref = writer.add_object(action)
+    if not orphan:
+        writer.root[generic.pdf_name("/OpenAction")] = ref
+        writer.update_root()
+    output = BytesIO(); writer.write(output)
+    return output.getvalue()
+
+
+@pytest.mark.parametrize("options", [{}, {"orphan": True}, {"compressed": True}])
+def test_initial_active_content_is_rejected_without_rewriting(sample, options):
+    with pytest.raises(ValidationFailure, match="UNSAFE_PDF_CONTENT"):
+        prepare_canonical(active_pdf(sample, **options))
+
+
+def test_escaped_javascript_name_is_rejected(sample):
+    pdf = active_pdf(sample)
+    # Same byte length preserves offsets while exercising parsed name decoding.
+    escaped = pdf.replace(b"/JavaScript", b"/Java#53cript").replace(b"/JS (void    0\\073)", b"/J#53 (void0\\073)")
+    assert len(escaped) == len(pdf) and b"/JavaScript" not in escaped and b"/JS " not in escaped
+    with pytest.raises(ValidationFailure, match="UNSAFE_PDF_CONTENT"):
+        prepare_canonical(escaped)
+
+
+def test_a_signature_does_not_make_active_content_safe(sample):
+    previous = active_pdf(sample)
+    candidate = sample["sign"](previous)
+    with pytest.raises(ValidationFailure, match="UNSAFE_PDF_CONTENT"):
+        validate(sample, previous, candidate)
+
+
+def test_javascript_mentioned_in_plain_text_is_not_an_active_action(sample):
+    writer = IncrementalPdfFileWriter(BytesIO(sample["base"]))
+    writer.root[generic.pdf_name("/Subject")] = generic.TextStringObject("Manual discussing /JavaScript and /JS, not an action")
+    writer.update_root(); output = BytesIO(); writer.write(output)
+    assert prepare_canonical(output.getvalue()) == output.getvalue()

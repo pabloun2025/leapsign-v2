@@ -32,6 +32,22 @@ try {
     await page.goto(origin + '/v2/lab/ui/');
     await page.getByRole('button', {name: 'Abrir documento'}).click();
     await page.getByRole('link', {name: 'Descargar documento PDF'}).waitFor();
+    await page.getByText('Leer texto de esta página', {exact: true}).waitFor();
+    const rendered = await page.getByRole('img', {name: 'Documento PDF, página 1'}).evaluate(canvas => {
+      const bytes = canvas.getContext('2d').getImageData(0, 0, canvas.width, canvas.height).data;
+      let dark = 0; for (let i = 0; i < bytes.length; i += 4) if (bytes[i] < 100 && bytes[i + 1] < 100 && bytes[i + 2] < 100) dark++;
+      return canvas.width > 100 && canvas.height > 100 && dark > 30;
+    });
+    assert(rendered, 'PDF was not actually rendered');
+    await page.getByRole('button', {name: 'Página siguiente'}).click();
+    await page.getByText('Área de firma', {exact: true}).waitFor();
+    await page.getByRole('button', {name: 'Girar', exact: true}).click();
+    await page.getByText('Área de firma', {exact: true}).waitFor();
+    for (let step = 0; step < 3; step++) {await page.getByRole('button', {name: 'Girar', exact: true}).click(); await page.getByText('Área de firma', {exact: true}).waitFor();}
+    await page.getByRole('button', {name: 'Ampliar PDF', exact: true}).click();
+    await page.getByRole('button', {name: 'Reducir PDF', exact: true}).click();
+    await page.getByRole('button', {name: 'Página anterior'}).click();
+    await page.getByRole('img', {name: 'Documento PDF, página 1'}).waitFor();
     assert(await page.getByRole('button', {name: 'Firmar con certificado'}).isDisabled());
     await page.getByRole('link', {name: 'Descargar documento PDF'}).click();
     await page.getByRole('checkbox', {name: 'He revisado el PDF y quiero firmarlo.'}).check();
@@ -54,10 +70,20 @@ try {
     assert.equal(await page.getByLabel('Contraseña del certificado', {exact: true}).inputValue(), '');
     assert.equal(await page.getByLabel('Certificado .p12 o .pfx', {exact: true}).inputValue(), '');
     assert.deepEqual(errors, []); assert.deepEqual(remoteRequests, []);
-    results.push({width, interaction: 'passed', horizontalOverflow: false, remoteRequests: 0});
+    results.push({width, interaction: 'passed', pdfCanvas: 'rendered', pageNavigation: 'passed', rotation: 'passed', horizontalOverflow: false, remoteRequests: 0});
     await context.close();
   }
-  process.stdout.write(JSON.stringify({syntheticOnly: true, results}) + '\n');
+  const fallbackContext = await browser.newContext();
+  const fallbackPage = await fallbackContext.newPage();
+  const fallbackErrors = []; fallbackPage.on('pageerror', () => fallbackErrors.push('pageerror'));
+  await fallbackPage.addInitScript(() => {globalThis.Worker = class {constructor() {throw new Error('Workers blocked for synthetic fallback test');}};});
+  await fallbackPage.goto(origin + '/v2/lab/ui/');
+  await fallbackPage.getByRole('button', {name: 'Abrir documento'}).click();
+  await fallbackPage.getByText('No se pudo mostrar este PDF. Puedes descargarlo para revisarlo.', {exact: true}).waitFor();
+  assert(await fallbackPage.getByRole('checkbox', {name: 'He revisado el PDF y quiero firmarlo.'}).isDisabled());
+  assert.deepEqual(fallbackErrors, []);
+  await fallbackContext.close();
+  process.stdout.write(JSON.stringify({syntheticOnly: true, results, workerBlockedFallback: 'passed'}) + '\n');
 } finally {
   await browser?.close(); vite.kill('SIGTERM');
 }

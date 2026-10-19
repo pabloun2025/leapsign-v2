@@ -5,7 +5,8 @@ valida documentos**, no conecta con Supabase/Resend y no se deben seleccionar
 certificados reales. Las operaciones de la demo son ficticias y están señaladas.
 
 La entrada es `v2/lab/ui`, nunca `src/main.tsx`. La CSP de publicación prohíbe
-conexiones, workers, iframes y envíos HTML. No hay bindings, backend, bucket ni
+conexiones, iframes y envíos HTML. Sólo permite workers de sus propios assets
+para PDF.js, no carga el motor de certificados. No hay bindings, backend, bucket ni
 servicios de pago asociados a esta configuración. No se garantiza un tope de
 facturación del proveedor por configurar una vista previa estática.
 

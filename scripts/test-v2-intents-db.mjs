@@ -48,5 +48,13 @@ try {
  assert.equal((await q('select active_stage_id from signing_v2.documents')).rows[0].active_stage_id,s2);count++;
  await q('update signing_v2.settings set external_enabled=false');
  await rejects(()=>issue(b),/V2_DISABLED/);
+ await q('update signing_v2.settings set direct_enabled=true');
+ const direct=(await issue(b)).rows[0];
+ assert.equal(direct.signer_id,b);count++;
+ await q('select signing_v2.claim_intent($1,$2,$3,$4)',[direct.id,b,'b'.repeat(64),'f'.repeat(64)]);
+ const finalVersion=randomUUID();
+ await q('select signing_v2.commit_validated($1,$2,$3,300,$4)',[direct.id,'f'.repeat(64),finalVersion,{...report,baseSha256:'c'.repeat(64),signedSha256:'f'.repeat(64),previousSignatureCount:1,signatureCount:2}]);
+ const completed=(await q('select status,current_version_id from signing_v2.documents where id=$1',[doc])).rows[0];
+ assert.equal(completed.status,'final_review');assert.equal(completed.current_version_id,finalVersion);count+=2;
  console.log(JSON.stringify({assertions:count,remoteWrites:0,concurrencyScope:'single PostgreSQL WASM connection'}));
 } finally {await db.close();}

@@ -3,17 +3,21 @@ from validator.v2_app import app
 from validator.tests.test_v2_engine import sample
 import base64
 import json
+import pytest
 from hashlib import sha256
 
 
 def test_disabled_by_default(monkeypatch):
     monkeypatch.delenv("EXTERNAL_SIGNATURE_ENABLED", raising=False)
+    monkeypatch.delenv("DIRECT_P12_SIGNING_ENABLED", raising=False)
+    monkeypatch.delenv("FIRMAEC_COMPATIBILITY_PROFILE_ENABLED", raising=False)
     with TestClient(app) as client:
         assert client.post("/validate", json={}).status_code == 503
 
 
 def test_requires_service_authentication(monkeypatch):
     monkeypatch.setenv("EXTERNAL_SIGNATURE_ENABLED", "true")
+    monkeypatch.setenv("FIRMAEC_COMPATIBILITY_PROFILE_ENABLED", "true")
     monkeypatch.setenv("V2_VALIDATOR_TOKEN", "x" * 32)
     monkeypatch.setenv("V2_TRUST_POLICY_FILE", "/nonexistent/test-policy.json")
     with TestClient(app) as client:
@@ -23,6 +27,7 @@ def test_requires_service_authentication(monkeypatch):
 
 def test_body_limit_before_read(monkeypatch):
     monkeypatch.setenv("EXTERNAL_SIGNATURE_ENABLED", "true")
+    monkeypatch.setenv("FIRMAEC_COMPATIBILITY_PROFILE_ENABLED", "true")
     monkeypatch.setenv("V2_VALIDATOR_TOKEN", "x" * 32)
     monkeypatch.setenv("V2_TRUST_POLICY_FILE", "/nonexistent/test-policy.json")
     with TestClient(app) as client:
@@ -32,6 +37,7 @@ def test_body_limit_before_read(monkeypatch):
 
 def test_certificate_or_password_fields_are_rejected(monkeypatch):
     monkeypatch.setenv("EXTERNAL_SIGNATURE_ENABLED", "true")
+    monkeypatch.setenv("FIRMAEC_COMPATIBILITY_PROFILE_ENABLED", "true")
     monkeypatch.setenv("V2_VALIDATOR_TOKEN", "x" * 32)
     monkeypatch.setenv("V2_TRUST_POLICY_FILE", "/nonexistent/test-policy.json")
     with TestClient(app) as client:
@@ -40,13 +46,16 @@ def test_certificate_or_password_fields_are_rejected(monkeypatch):
         assert "synthetic-test-only" not in response.text
 
 
-def test_real_http_worker_validation(sample, monkeypatch, tmp_path):
+@pytest.mark.parametrize("method", ["external", "direct"])
+def test_real_http_worker_validation(sample, monkeypatch, tmp_path, method):
     # Only public trust material is written; all fixture private keys stay in memory.
     (tmp_path / "root.der").write_bytes(sample["roots"][0])
     (tmp_path / "revocations.der").write_bytes(sample["crl"]())
     manifest = tmp_path / "policy.json"
     manifest.write_text(json.dumps({"version": 1, "trust_roots": ["root.der"], "crls": ["revocations.der"]}))
-    monkeypatch.setenv("EXTERNAL_SIGNATURE_ENABLED", "true")
+    monkeypatch.setenv("EXTERNAL_SIGNATURE_ENABLED", "true" if method == "external" else "false")
+    monkeypatch.setenv("DIRECT_P12_SIGNING_ENABLED", "true" if method == "direct" else "false")
+    monkeypatch.setenv("FIRMAEC_COMPATIBILITY_PROFILE_ENABLED", "true")
     monkeypatch.setenv("V2_VALIDATOR_TOKEN", "x" * 32)
     monkeypatch.setenv("V2_TRUST_POLICY_FILE", str(manifest))
     payload = {"previous": base64.b64encode(sample["base"]).decode(), "candidate": base64.b64encode(sample["first"]).decode(),
@@ -57,3 +66,12 @@ def test_real_http_worker_validation(sample, monkeypatch, tmp_path):
         assert result.json()["valid"] is True
         assert result.json()["signatureCount"] == 1
         assert result.json()["revocation"] == "good"
+
+
+def test_profile_flag_required_even_when_direct_mode_is_enabled(monkeypatch):
+    monkeypatch.setenv("DIRECT_P12_SIGNING_ENABLED", "true")
+    monkeypatch.setenv("FIRMAEC_COMPATIBILITY_PROFILE_ENABLED", "false")
+    monkeypatch.setenv("V2_VALIDATOR_TOKEN", "x" * 32)
+    monkeypatch.setenv("V2_TRUST_POLICY_FILE", "/nonexistent/test-policy.json")
+    with TestClient(app) as client:
+        assert client.post("/validate", json={}, headers={"Authorization": "Bearer " + "x" * 32}).status_code == 503

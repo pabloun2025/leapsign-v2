@@ -4,6 +4,8 @@
 sintético; hay componentes UI y coordinador, pero no endpoints públicos conectados.
 El dominio reservado es `https://leapsign.app`.
 `firma.veryfacil.org`, su Worker y Supabase permanecen sin cambios.
+Toda publicación está suspendida por el propietario. Las instrucciones de
+publicación siguientes son una guía futura, no autorización para ejecutarla.
 
 ## Verificaciones locales reproducibles
 
@@ -37,7 +39,7 @@ V2_LAB_PYTHON=/tmp/leapsign-v2-dev/bin/python bash scripts/test-v2-local-lab.sh
 
 El comando verifica el hash del motor original, genera una variante experimental
 adyacente dentro de `node_modules` (no modifica el original), compila un worker
-temporal fuera de la aplicación y lo borra al terminar. Ejecuta **74 tests Python**
+temporal fuera de la aplicación y lo borra al terminar. Ejecuta **89 tests Python**
 con el laboratorio configurado. Sin esas variables, el comando pytest habitual
 omite explícitamente los 30 casos del laboratorio; no contarlos como aprobados.
 
@@ -72,10 +74,12 @@ fallo del motor ficticio y limpieza de campos. Guarda capturas sintéticas en
 `/tmp/leapsign-v2-signing-<ancho>.png`. El diálogo pasó axe en los tres anchos.
 No ofrece un enlace público ni envía datos a Supabase/Resend.
 
-La pantalla admite un renderizador PDF de confianza como parte del host. Mientras
-no esté integrado, muestra una descarga para revisión en lugar de simular páginas
-del PDF o insertar un iframe de terceros. La descarga y el checkbox son ayudas
-de interfaz, no prueba de firma ni de autorización para el servidor.
+La pantalla usa PDF.js 6.4.299 (Apache-2.0) para renderizar una copia del PDF real
+en canvas: páginas, zoom, giro, texto accesible y marcador de firma. No usa
+iframes, no ejecuta acciones del PDF, desactiva XFA y recursos externos, y no
+modifica ni transfiere el buffer canónico. Acota tamaño, páginas, geometría,
+área de canvas y tiempos. Si Worker está bloqueado, conserva la descarga como
+alternativa. El checkbox no prueba firma ni autorización para el servidor.
 
 El coordinador verifica hash e intención antes de leer el certificado, envía
 los buffers al puerto local y sólo entrega al API PDF firmado/ID/nonce/hash.
@@ -83,6 +87,12 @@ No guarda contraseña en su estado. Al iniciar el envío, se desactiva cancelar:
 una conexión interrumpida puede dejar un commit confirmado en el servidor.
 En ese caso se muestra resultado incierto y se bloquea la repetición hasta que
 el futuro host consulte el recibo/seguimiento. No hay reintentos automáticos.
+
+`V2HttpSigningApi` prepara el contrato del API, no lo despliega: sólo origen
+`https://leapsign.app`, credenciales same-origin, sin redirects, JSON hasta 16 KiB
+y PDF hasta 10 MiB. Rechaza rutas ajenas a la intención y campos extra. Sólo
+sube PDF/ID/nonce/hash, nunca certificado ni contraseña. Los handlers de
+Auth/CSRF/cuotas/SQL/Storage siguen pendientes; el cliente no los sustituye.
 
 ## Servicio privado de pruebas
 
@@ -103,8 +113,9 @@ V2_VALIDATOR_TOKEN=<secreto de servicio generado y guardado fuera del repositori
 ```
 
 No pegar el secreto en chats, comandos compartidos, archivos versionados ni la
-configuración VITE. Sólo cambiar `EXTERNAL_SIGNATURE_ENABLED` en el entorno de
-pruebas habilita el validador, no el flujo completo ni la compatibilidad visual.
+configuración VITE. Se requieren el perfil y al menos un modo directo/externo,
+además de credencial de servicio y política de confianza. Habilitar el servicio
+no habilita el flujo completo ni demuestra compatibilidad visual.
 
 El manifiesto de confianza versión 1 contiene listas de nombres de archivo
 locales, sin rutas: `trust_roots`, `crls` y `ocsps`. El material es DER público,

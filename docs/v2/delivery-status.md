@@ -3,6 +3,8 @@
 Esta intervención implementa el núcleo verificable y prepara el modelo de
 persistencia. **No está terminada la petición integral de Firmador v2**.
 No se ha desplegado en leapsign.app ni modificado firma.veryfacil.org.
+La instrucción más reciente suspende **toda publicación**, incluida la vista
+previa. El trabajo se guarda sólo en commits locales de la rama v2.
 
 ## Implementado
 
@@ -34,13 +36,22 @@ No se ha desplegado en leapsign.app ni modificado firma.veryfacil.org.
   de resultado incierto no se reintenta ni se presenta como cancelada.
 - Pantalla React aislada, modal de certificado y alternativa externa, contraseña
   mostrar/ocultar y limpieza de controles al enviar/cerrar. Verificada en Chromium
-  a 1440/768/390 px con datos ficticios. Usa fallback explícito por descarga:
-  **no hay renderizador PDF integrado ni endpoints reales conectados todavía**.
+  a 1440/768/390 px con datos ficticios. Visor PDF.js real: páginas, giro, zoom,
+  texto accesible y área de firma, sin reescribir bytes ni abrir scripts/adjuntos.
+  Fallback por descarga si el navegador bloquea workers. **Los endpoints reales
+  siguen sin estar conectados.**
+- Transporte HTTP same-origin preparado: límites, timeout, sin redirecciones,
+  DTO públicos estrictos. Ninguna llamada admite P12, contraseña ni clave privada.
+- Validador y SQL admiten sólo firma directa o sólo externa, siempre con perfil
+  habilitado. Los tres flags siguen apagados por defecto.
+- Rechazo de contenido activo/adjuntos en v2, incluidos nombres parseados en
+  revisiones, objetos comprimidos y huérfanos, sin falsos positivos por menciones
+  dentro del texto. No es una garantía antivirus universal.
 
 ## Pendiente / bloqueo para completar
 
 1. Llevar la extensión experimental del motor a un fork fuente mantenible/API,
-   completar el sello (datos reales, Unicode, geometría) y el renderizador PDF.
+   completar el sello (datos reales, Unicode y geometría final).
    El modal y la pantalla existen contra un puerto de API, no un backend conectado.
    Hay firma P12 y QR en laboratorio Chromium, no integrada todavía. No se ha
    añadido una falsa firma basada en una imagen ni una clave en servidor.
@@ -58,15 +69,17 @@ No se ha desplegado en leapsign.app ni modificado firma.veryfacil.org.
 
 ## Verificaciones ejecutadas
 
-- Vitest: **161 correctas**, 20 archivos (110 previas + 51 nuevas).
-- Python con laboratorio configurado: **74 correctas** (44 del validador + 30 del
+- Vitest: **182 correctas**, 22 archivos (110 previas + 72 nuevas).
+- Python con laboratorio configurado: **89 correctas** (59 del validador + 30 del
   motor local), CA/CRL sintéticas EC/ES, sin claves en disco/repo.
-- SQL: **17 aserciones correctas** en PostgreSQL WASM aislado; no demuestra
+- SQL: **20 aserciones correctas** en PostgreSQL WASM aislado; no demuestra
   concurrencia multi-conexión real, que sigue pendiente.
+- Deno: **6 correctas** de inspección PDF v1, ejecutadas sin permisos de red/env.
 - TypeScript y build correctos. El bundle servido de v1 mantiene su hash previo;
   sigue el aviso conocido de tamaño >500 kB. El prototipo UI separado pasó
   interacción, ausencia de desbordamiento y comprobación axe del diálogo en
-  escritorio/tablet/móvil; no es un flujo contra servicios reales.
+  escritorio/tablet/móvil; canvas real, navegación, giro, zoom y fallback sin
+  Worker. No es un flujo contra servicios reales.
 - `npm audit`: 0 vulnerabilidades declaradas. Esto no es una garantía universal.
 - Python muestra una advertencia de deprecación de Starlette/AnyIO en tests;
   no se han ocultado avisos ni debilitado validaciones para pasar pruebas.
@@ -80,6 +93,9 @@ No se ha desplegado en leapsign.app ni modificado firma.veryfacil.org.
 | `src/v2/local-session.ts` | Ciclo de vida local acotado, cancelación y cierre del worker |
 | `tests/v2-local-session.test.ts` | 12 casos de transferencia, cancelación, caducidad, errores y límites; no son pruebas criptográficas |
 | `src/v2/signing-workflow.ts` | Coordinación UI, vinculación de intención, envío público y estado incierto |
+| `src/v2/http-api.ts`, `src/v2/public-data.ts` | Transporte y esquemas públicos estrictos |
+| `tests/v2-http-api.test.ts` | 17 casos de transporte con mocks, sin servicios reales |
+| `src/v2/PdfPreview.tsx` | Visor canvas/texto PDF.js con límites y worker dedicado |
 | `tests/v2-signing-workflow.test.ts` | 16 casos de coordinación con mocks, no evidencia criptográfica |
 | `src/v2/SigningPanel.tsx`, `src/v2/signing-panel.css` | Pantalla y modal responsive independientes, no montados en v1 |
 | `v2/lab/ui/` | Prototipo señalado como laboratorio; no acepta certificados reales ni guarda firmas |
@@ -112,7 +128,7 @@ No se ha desplegado en leapsign.app ni modificado firma.veryfacil.org.
 | `docs/v2/python-inventory.json` | Inventario equivalente a SBOM del entorno aislado |
 | `docs/v2/delivery-status.md` | Estado verificable y lista de archivos |
 | `LICENSE`, `NOTICE` | AGPLv3 y atribuciones de PSMM/Pablo Martínez |
-| `package.json`, `package-lock.json` | Sólo metadato de licencia, sin nuevas dependencias JS |
+| `package.json`, `package-lock.json` | AGPLv3 y PDF.js 6.4.299 fijado para v2; el bundle v1 no lo importa |
 | `README.md` | Aviso v2 en desarrollo y enlaces a la documentación |
 | `.gitignore` | Evitar cachés Python y pytest en el repositorio |
 

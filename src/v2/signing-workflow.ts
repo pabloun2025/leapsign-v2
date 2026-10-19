@@ -1,6 +1,7 @@
 import type {PrepareSigningInput, SignatureValidationResult, SigningIntent} from './contracts';
 import {assertV2Origin, INTENT_LIFETIME_MS, MAX_PDF_BYTES, signingFlags, validateCertificateFile, type SigningFlags} from './policy';
 import {LocalSigningError, type LocalWorkerRequest, type LocalSessionResult} from './local-session';
+import {isPublicSigningIntent, isPublicValidationReport} from './public-data';
 
 /** This port belongs to the authenticated v2 API, NOT a client-side validator.
  * No method accepts certificate files, private keys, passwords or worker reports. */
@@ -86,6 +87,7 @@ export class SigningWorkflow {
       const value = await this.options.api.prepare(input, abort.signal);
       this.stillCurrent(generation);
       const i = value.intent;
+      if (!isPublicSigningIntent(i)) throw new WorkflowError('PREPARATION_FAILED');
       const issued = Date.parse(i.issuedAt), expires = Date.parse(i.expiresAt);
       if (i.documentId !== input.documentId || i.signerId !== this.options.actorId || i.profile !== input.profile ||
           !['signature_intent_issued', 'awaiting_local_signature'].includes(i.state) ||
@@ -148,7 +150,7 @@ export class SigningWorkflow {
     let report: SignatureValidationResult;
     try {report = await this.options.api.submit({intentId: prepared.intent.id, nonce: prepared.intent.nonce, pdf, sha256: hash}, signal);}
     catch {throw new WorkflowError('SUBMISSION_UNCONFIRMED');}
-    if (report.valid !== true || report.policy !== 'leapsign-v2-strict-offline-1' || report.baseSha256 !== prepared.intent.baseSha256 || report.signedSha256 !== hash ||
+    if (!isPublicValidationReport(report) || report.valid !== true || report.baseSha256 !== prepared.intent.baseSha256 || report.signedSha256 !== hash ||
         report.revocation !== 'good' || !report.certificate || report.previousSignatureCount !== prepared.previousSignatureCount || report.signatureCount !== prepared.previousSignatureCount + 1 ||
         (prepared.intent.expectedFingerprint && report.certificate.fingerprint !== prepared.intent.expectedFingerprint)) throw new WorkflowError('SIGNATURE_REJECTED');
     this.prepared = undefined;

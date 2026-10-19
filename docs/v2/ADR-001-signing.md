@@ -31,7 +31,8 @@ internas gestionadas por el recolector de basura. No se prometerá zeroización.
 **Laboratorio implementado, integración pendiente:** lectura P12/PFX, firma CMS
 incremental y worker real de Chromium con tres firmas visibles verificadas por
 pyHanko. Hay modal, pantalla y coordinador contra puertos tipados; todavía no hay
-firma directa conectada a endpoints ni un renderizador PDF integrado al producto.
+firma directa conectada a endpoints. El visor canvas/texto PDF.js está integrado
+en la pantalla aislada, no en la web v1.
 `@libpdf/core@0.5.3` fuerza campos invisibles. Se prueba una extensión explícita
 de laboratorio que conserva un campo merged con apariencia previamente preparada,
 antes del guardado/ByteRange/hash/CMS. No se reconstruye CMS ni se modifica el PDF
@@ -130,10 +131,19 @@ completa de todas las dependencias transitivas. pyHanko y certvalidator: MIT;
 FastAPI: MIT; Uvicorn: BSD-3-Clause; cryptography: Apache-2.0 OR BSD-3-Clause;
 asn1crypto: MIT. ReportLab se usa sólo para generar PDF sintéticos en tests (BSD).
 PGlite 0.3.14 (Apache-2.0) sólo se instala en el entorno de pruebas, no en la app.
-Las dependencias JS de v1 no se han cambiado.
+El manifiesto compartido añade PDF.js 6.4.299 (Apache-2.0), fijado para el visor
+v2. Sus dependencias opcionales de canvas Node no se importan en navegador.
+El bundle de v1 mantiene su hash: no importa el visor desde su entrada.
 El laboratorio tiene manifiesto/lock propios en `v2/lab`: LibPDF 0.5.3 (MIT),
 qrcode 1.5.4 (MIT, Ryan Day), jsQR 1.4.0 (Apache-2.0) y Playwright 1.64.1
 (Apache-2.0). No se incluyen esos paquetes en el bundle de v1.
+
+La preparación/validación inspecciona nombres parseados en las revisiones PDF
+(máximo 128), incluidos objetos comprimidos y huérfanos, con límite de recorrido.
+Rechaza JavaScript, lanzamientos, adjuntos y acciones de envío/importación, sin
+sanear ni reescribir un PDF firmado. Las menciones dentro de texto no se tratan
+como acciones. No es un antivirus universal; el parser debe ejecutarse con los
+límites de memoria/CPU del worker privado.
 
 ## Secuencia directa prevista (NO activada)
 

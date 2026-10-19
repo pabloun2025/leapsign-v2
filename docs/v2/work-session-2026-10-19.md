@@ -22,3 +22,29 @@ agente activo tras suspenderse el entorno ni simular trabajo con esperas.
 
 La solicitud previa de acceso Cloudflare permanece como borrador sin activar;
 no es requisito para el desarrollo ni autoriza ninguna publicación.
+
+## Avances comprobados en la sesión
+
+- Transporte HTTP sin certificados, campos extra, rutas ajenas o redirecciones;
+  respuestas limitadas y cancelación de cuerpos que se quedan esperando.
+- Esquemas públicos compartidos y rechazo de fechas de intención inválidas,
+  contadores fraccionarios/negativos e informes inesperados.
+- PDF.js 6.4.299 fijado (Apache-2.0): visor de PDF real, páginas, giro, zoom,
+  texto accesible y marcador de firma. Sin iframes, acciones PDF o recursos
+  externos. Copia de bytes y worker separado; límites de tamaño/canvas/tiempo.
+- Fallback comprobado cuando Worker está bloqueado. UI comprobada a tres anchos,
+  incluyendo canvas real y axe. Ningún servicio externo recibió datos de prueba.
+- Corrección de los flags: el validador y SQL no exigen activar firma externa
+  para validar una firma directa. Pruebas positivas de ambos modos.
+- Contenido activo/adjuntos rechazados también en el validador v2, incluidos
+  objetos comprimidos/huérfanos y nombres escapados, sin confundir texto normal.
+- Las pruebas Deno de inspección PDF v1 también se ejecutaron en aislamiento,
+  sin permisos de red ni variables de entorno para el código de test.
+
+## Límites que permanecen
+
+No hay publicación, API Auth/cuotas/Storage conectada, ni infraestructura v2
+creada. El motor visible sigue como extensión experimental de laboratorio;
+faltan la integración final del sello y la matriz FirmaEC/Adobe real. No se
+configuraron autoridades de producción ni actualización operativa de revocación.
+Las pruebas SQL WASM no prueban concurrencia multi-conexión PostgreSQL real.
