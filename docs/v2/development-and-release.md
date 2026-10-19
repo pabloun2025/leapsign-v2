@@ -1,7 +1,7 @@
 # Desarrollo, publicación y recuperación de v2
 
 **No está lista para publicar.** El motor visible existe como laboratorio
-sintético, no hay UI v2 ni endpoints públicos conectados.
+sintético; hay componentes UI y coordinador, pero no endpoints públicos conectados.
 El dominio reservado es `https://leapsign.app`.
 `firma.veryfacil.org`, su Worker y Supabase permanecen sin cambios.
 
@@ -52,6 +52,37 @@ Se han probado firmas 1/2/3, cadena local–externo sintético–local, claves i
 P12 malformado, CMS sin espacio, certificados vencidos/no aptos, posición, rotación
 y decodificación del QR renderizado. No sustituyen pruebas manuales con FirmaEC,
 Adobe, navegadores distintos ni un flujo con autenticación y persistencia reales.
+
+## Pantalla de firma: prototipo aislado
+
+`SigningPanel` se conecta al coordinador `SigningWorkflow`. No se importa desde
+`src/main.tsx` ni modifica el bundle de v1. El host futuro debe proporcionar un
+puerto API autenticado y un firmador local aprobado; los flags están apagados por
+defecto. El origen v1 se rechaza. No hay autenticación implícita por pasar un
+`actorId`: el backend pendiente debe verificarla de forma independiente.
+
+```bash
+node scripts/check-v2-signing-ui.mjs
+# Con axe instalado en el entorno, añadir AXE_SCRIPT_PATH=<ruta a axe.min.js>.
+```
+
+El script sirve únicamente la ruta local `/v2/lab/ui/`, abre Chromium, comprueba
+1440/768/390 px, descarga explícita, revisión, diálogo, mostrar/ocultar contraseña,
+fallo del motor ficticio y limpieza de campos. Guarda capturas sintéticas en
+`/tmp/leapsign-v2-signing-<ancho>.png`. El diálogo pasó axe en los tres anchos.
+No ofrece un enlace público ni envía datos a Supabase/Resend.
+
+La pantalla admite un renderizador PDF de confianza como parte del host. Mientras
+no esté integrado, muestra una descarga para revisión en lugar de simular páginas
+del PDF o insertar un iframe de terceros. La descarga y el checkbox son ayudas
+de interfaz, no prueba de firma ni de autorización para el servidor.
+
+El coordinador verifica hash e intención antes de leer el certificado, envía
+los buffers al puerto local y sólo entrega al API PDF firmado/ID/nonce/hash.
+No guarda contraseña en su estado. Al iniciar el envío, se desactiva cancelar:
+una conexión interrumpida puede dejar un commit confirmado en el servidor.
+En ese caso se muestra resultado incierto y se bloquea la repetición hasta que
+el futuro host consulte el recibo/seguimiento. No hay reintentos automáticos.
 
 ## Servicio privado de pruebas
 

@@ -30,7 +30,8 @@ internas gestionadas por el recolector de basura. No se prometerá zeroización.
 
 **Laboratorio implementado, integración pendiente:** lectura P12/PFX, firma CMS
 incremental y worker real de Chromium con tres firmas visibles verificadas por
-pyHanko. No hay todavía modal ni firma directa conectada al producto.
+pyHanko. Hay modal, pantalla y coordinador contra puertos tipados; todavía no hay
+firma directa conectada a endpoints ni un renderizador PDF integrado al producto.
 `@libpdf/core@0.5.3` fuerza campos invisibles. Se prueba una extensión explícita
 de laboratorio que conserva un campo merged con apariencia previamente preparada,
 antes del guardado/ByteRange/hash/CMS. No se reconstruye CMS ni se modifica el PDF

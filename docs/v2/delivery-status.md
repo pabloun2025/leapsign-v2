@@ -28,11 +28,20 @@ No se ha desplegado en leapsign.app ni modificado firma.veryfacil.org.
   comprobadas por pyHanko; QR decodificado desde el PDF renderizado; cadena mixta
   local–pyHanko–local, contraseñas incorrectas, CMS insuficiente y rotaciones.
   Es una extensión experimental, no un motor integrado al producto.
+- Coordinador de pantalla: comprueba actor, intención, hash y caducidad; bloquea
+  clics duplicados, resultados tardíos tras cancelar y recibos de otra versión.
+  El puerto de envío sólo acepta PDF, identificador, nonce y hash. Una entrega
+  de resultado incierto no se reintenta ni se presenta como cancelada.
+- Pantalla React aislada, modal de certificado y alternativa externa, contraseña
+  mostrar/ocultar y limpieza de controles al enviar/cerrar. Verificada en Chromium
+  a 1440/768/390 px con datos ficticios. Usa fallback explícito por descarga:
+  **no hay renderizador PDF integrado ni endpoints reales conectados todavía**.
 
 ## Pendiente / bloqueo para completar
 
 1. Llevar la extensión experimental del motor a un fork fuente mantenible/API,
-   completar el sello (datos reales, Unicode, geometría), vista previa y modal.
+   completar el sello (datos reales, Unicode, geometría) y el renderizador PDF.
+   El modal y la pantalla existen contra un puerto de API, no un backend conectado.
    Hay firma P12 y QR en laboratorio Chromium, no integrada todavía. No se ha
    añadido una falsa firma basada en una imagen ni una clave en servidor.
 2. Conectar Auth, cuotas, almacenamiento y adaptadores SQL a endpoints propios
@@ -49,13 +58,15 @@ No se ha desplegado en leapsign.app ni modificado firma.veryfacil.org.
 
 ## Verificaciones ejecutadas
 
-- Vitest: **145 correctas**, 19 archivos (110 previas + 35 nuevas).
+- Vitest: **161 correctas**, 20 archivos (110 previas + 51 nuevas).
 - Python con laboratorio configurado: **74 correctas** (44 del validador + 30 del
   motor local), CA/CRL sintéticas EC/ES, sin claves en disco/repo.
 - SQL: **17 aserciones correctas** en PostgreSQL WASM aislado; no demuestra
   concurrencia multi-conexión real, que sigue pendiente.
 - TypeScript y build correctos. El bundle servido de v1 mantiene su hash previo;
-  sigue el aviso conocido de tamaño >500 kB. No hay nueva UI que probar aún.
+  sigue el aviso conocido de tamaño >500 kB. El prototipo UI separado pasó
+  interacción, ausencia de desbordamiento y comprobación axe del diálogo en
+  escritorio/tablet/móvil; no es un flujo contra servicios reales.
 - `npm audit`: 0 vulnerabilidades declaradas. Esto no es una garantía universal.
 - Python muestra una advertencia de deprecación de Starlette/AnyIO en tests;
   no se han ocultado avisos ni debilitado validaciones para pasar pruebas.
@@ -68,6 +79,11 @@ No se ha desplegado en leapsign.app ni modificado firma.veryfacil.org.
 | `src/v2/policy.ts` | Flags, origen v2, límites y validación local del selector |
 | `src/v2/local-session.ts` | Ciclo de vida local acotado, cancelación y cierre del worker |
 | `tests/v2-local-session.test.ts` | 12 casos de transferencia, cancelación, caducidad, errores y límites; no son pruebas criptográficas |
+| `src/v2/signing-workflow.ts` | Coordinación UI, vinculación de intención, envío público y estado incierto |
+| `tests/v2-signing-workflow.test.ts` | 16 casos de coordinación con mocks, no evidencia criptográfica |
+| `src/v2/SigningPanel.tsx`, `src/v2/signing-panel.css` | Pantalla y modal responsive independientes, no montados en v1 |
+| `v2/lab/ui/` | Prototipo señalado como laboratorio; no acepta certificados reales ni guarda firmas |
+| `scripts/check-v2-signing-ui.mjs` | QA local Chromium a 1440/768/390 px, con axe opcional |
 | `server/v2/intents.ts` | Intenciones, vinculación y coordinación externa |
 | `server/v2/private-validator.ts` | Frontera HTTP privada, cuota obligatoria y respuesta acotada |
 | `v2/migrations/001_intents.sql` | Persistencia privada preparada, fuera de migraciones v1 |
