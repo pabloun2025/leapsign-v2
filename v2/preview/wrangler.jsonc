@@ -1,0 +1,12 @@
+{
+  "name": "leapsign-v2-ui-preview",
+  "compatibility_date": "2026-10-19",
+  "workers_dev": true,
+  "preview_urls": false,
+  "routes": [],
+  "assets": {
+    "directory": "./dist",
+    "not_found_handling": "none"
+  },
+  "observability": { "enabled": false }
+}
