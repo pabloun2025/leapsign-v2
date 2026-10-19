@@ -1,0 +1,14 @@
+{
+  "name": "leapsign-v2-signing-laboratory",
+  "private": true,
+  "version": "0.0.0",
+  "type": "module",
+  "license": "AGPL-3.0-only",
+  "description": "Synthetic interoperability tests only; never deploy as an API",
+  "dependencies": {
+    "@libpdf/core": "0.5.3",
+    "jsqr": "1.4.0",
+    "playwright": "1.64.1",
+    "qrcode": "1.5.4"
+  }
+}

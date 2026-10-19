@@ -28,14 +28,24 @@ y limpiar los controles DOM/referencias. No se recordará certificado ni contras
 JavaScript no garantiza el borrado físico inmediato de memoria, cadenas ni copias
 internas gestionadas por el recolector de basura. No se prometerá zeroización.
 
-**No implementado aún:** lectura P12/PFX, modal, worker y firma directa.
-`@libpdf/core@0.5.3` se evaluó fuera de la aplicación. Su motor usa PAdES incremental,
-pero fuerza firma invisible: no cumple la apariencia obligatoria. El cambio técnico
-mínimo propuesto es un motor/revisión que exponga explícitamente posición y flujo
-de apariencia antes de firmar, sin reescribir PDF ya firmados ni reconstruir CMS
-manualmente. Cualquier adaptación debe conservar la licencia MIT y superar los
-tests de ByteRange, dos/tres firmas, DocMDP y pruebas reales de interoperabilidad.
-No se mueve la clave al servidor como alternativa.
+**Laboratorio implementado, integración pendiente:** lectura P12/PFX, firma CMS
+incremental y worker real de Chromium con tres firmas visibles verificadas por
+pyHanko. No hay todavía modal ni firma directa conectada al producto.
+`@libpdf/core@0.5.3` fuerza campos invisibles. Se prueba una extensión explícita
+de laboratorio que conserva un campo merged con apariencia previamente preparada,
+antes del guardado/ByteRange/hash/CMS. No se reconstruye CMS ni se modifica el PDF
+firmado. El generador comprueba SHA-256 del artefacto original y aplica dos cambios
+contextuales; no modifica el paquete original y rechaza versiones distintas.
+No es una dependencia apta para publicación todavía: falta mantener la extensión
+en un fork de código fuente revisable o API upstream, conservar MIT y completar
+DocMDP, Unicode, geometría de vista previa y FirmaEC/Adobe reales.
+
+La prueba de rotación detectó además asignación de objetos por debajo del `/Size`
+reservado del tráiler. El adaptador de laboratorio usa `allocateRef()` público
+para saltar esos números antes de crear campos (máximo 1024 huecos), sin cambiar
+la base ni relajar el análisis de revisiones. La regresión queda cubierta.
+No se mueve la clave al servidor como alternativa. Los procesos Node reciben
+solamente certificados sintéticos como instrumento de pruebas, nunca P12 reales.
 
 ### Apariencia QR y FirmaEC
 
@@ -50,8 +60,11 @@ y autorizarse en servidor. El sello visual no equivale a validación criptográf
 
 El validador actual comprueba posición y presencia de `/AP`; **no inspecciona
 semánticamente el contenido QR**. Por ello el flag del perfil sigue apagado.
-Las rotaciones y formatos de página requieren fixtures adicionales antes de
-aprobar el renderizador. Metadato requerido del futuro motor:
+El laboratorio renderiza un QR vectorial ficticio y lo decodifica desde el PDF
+firmado con Poppler/jsQR. Prueba las rotaciones 90/180/270, sin aprobar todavía el
+perfil ni la orientación visual de la futura vista previa. El gráfico tiene texto
+fijo de prueba; no se ha implementado nombre Unicode, fecha, motivo y ubicación
+del sello final. Metadato requerido del futuro motor:
 `LeapSign Firmador v2 — PAdES compatible`, nunca autor/productor oficial FirmaEC.
 
 ### PAdES y flujo externo
@@ -117,6 +130,9 @@ FastAPI: MIT; Uvicorn: BSD-3-Clause; cryptography: Apache-2.0 OR BSD-3-Clause;
 asn1crypto: MIT. ReportLab se usa sólo para generar PDF sintéticos en tests (BSD).
 PGlite 0.3.14 (Apache-2.0) sólo se instala en el entorno de pruebas, no en la app.
 Las dependencias JS de v1 no se han cambiado.
+El laboratorio tiene manifiesto/lock propios en `v2/lab`: LibPDF 0.5.3 (MIT),
+qrcode 1.5.4 (MIT, Ryan Day), jsQR 1.4.0 (Apache-2.0) y Playwright 1.64.1
+(Apache-2.0). No se incluyen esos paquetes en el bundle de v1.
 
 ## Secuencia directa prevista (NO activada)
 

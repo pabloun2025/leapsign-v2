@@ -1,7 +1,8 @@
 # Desarrollo, publicación y recuperación de v2
 
-**No está lista para publicar.** No hay UI v2, motor local visible ni endpoints
-públicos conectados. El dominio reservado es `https://leapsign.app`.
+**No está lista para publicar.** El motor visible existe como laboratorio
+sintético, no hay UI v2 ni endpoints públicos conectados.
+El dominio reservado es `https://leapsign.app`.
 `firma.veryfacil.org`, su Worker y Supabase permanecen sin cambios.
 
 ## Verificaciones locales reproducibles
@@ -22,6 +23,35 @@ El inventario se reproduce con `scripts/v2-python-inventory.py` dentro del venv.
 No se requieren certificados reales, cuentas ni servicios de producción.
 El esquema SQL de pruebas vive sólo en memoria; NO aplicar ese archivo en v1.
 Antes de publicar, repetir concurrencia con dos conexiones PostgreSQL reales.
+
+## Laboratorio local P12/QR en Chromium
+
+Sólo Linux de desarrollo con `/usr/bin/chromium`, `pdftoppm` y el venv anterior.
+No introducir certificados reales. Los procesos Node son instrumentos de tests,
+no endpoints para recibir certificados ni una alternativa a la firma en navegador.
+
+```bash
+npm ci --ignore-scripts --prefix v2/lab --cache /tmp/leapsign-npm-cache
+V2_LAB_PYTHON=/tmp/leapsign-v2-dev/bin/python bash scripts/test-v2-local-lab.sh
+```
+
+El comando verifica el hash del motor original, genera una variante experimental
+adyacente dentro de `node_modules` (no modifica el original), compila un worker
+temporal fuera de la aplicación y lo borra al terminar. Ejecuta **74 tests Python**
+con el laboratorio configurado. Sin esas variables, el comando pytest habitual
+omite explícitamente los 30 casos del laboratorio; no contarlos como aprobados.
+
+El servidor HTTP efímero del laboratorio sólo sirve la página vacía y el worker:
+dos GET, sin endpoint de subida. El P12 sintético viaja a Chromium mediante IPC
+y al worker por `postMessage`, no por HTTP. Se comprueban ausencia de solicitudes
+adicionales y entradas Web Storage; el worker tiene CSP sin conexiones.
+No hay trazas de claves ni archivos de claves. El QR de prueba contiene un URN
+ficticio, no afirma que exista una página de verificación pública.
+
+Se han probado firmas 1/2/3, cadena local–externo sintético–local, claves incorrectas,
+P12 malformado, CMS sin espacio, certificados vencidos/no aptos, posición, rotación
+y decodificación del QR renderizado. No sustituyen pruebas manuales con FirmaEC,
+Adobe, navegadores distintos ni un flujo con autenticación y persistencia reales.
 
 ## Servicio privado de pruebas
 
