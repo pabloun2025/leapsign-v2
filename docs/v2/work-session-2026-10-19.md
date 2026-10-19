@@ -40,6 +40,10 @@ no es requisito para el desarrollo ni autoriza ninguna publicación.
   objetos comprimidos/huérfanos y nombres escapados, sin confundir texto normal.
 - Las pruebas Deno de inspección PDF v1 también se ejecutaron en aislamiento,
   sin permisos de red ni variables de entorno para el código de test.
+- Paquete estático construido y probado sólo en loopback con su CSP real: PDF
+  visible, cero POST y cero solicitudes externas. No se publicó ni se subió.
+- Carga diferida del visor para reducir la descarga inicial en móvil; el fallo
+  de carga se contiene en el visor y conserva la alternativa de descarga.
 
 ## Límites que permanecen
 

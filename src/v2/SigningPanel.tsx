@@ -1,12 +1,19 @@
-import {useEffect, useId, useRef, useState, useSyncExternalStore, type FormEvent, type ReactNode} from 'react';
+import {Component, Suspense, lazy, useEffect, useId, useRef, useState, useSyncExternalStore, type FormEvent, type ReactNode} from 'react';
 import type {PrepareSigningInput} from './contracts';
 import {SigningWorkflow} from './signing-workflow';
-import {PdfPreview} from './PdfPreview';
 import './signing-panel.css';
 
-/** Reusable v2 screen; not mounted in v1. A trusted PDF renderer may be supplied
- * by the v2 host. No unsafe HTML, PDF scripts or third-party iframe is embedded.
- * Without a renderer, the honest fallback is explicit review by download. */
+const PdfPreview = lazy(() => import('./PdfPreview').then(module => ({default: module.PdfPreview})));
+class PreviewBoundary extends Component<{children: ReactNode; onUnavailable: () => void}, {failed: boolean}> {
+  state = {failed: false};
+  static getDerivedStateFromError() {return {failed: true};}
+  componentDidCatch() {this.props.onUnavailable();}
+  render() {return this.state.failed ? <p role="status">No se pudo cargar el visor. Puedes descargar el PDF para revisarlo.</p> : this.props.children;}
+}
+
+/** Reusable v2 screen; not mounted in v1. The built-in PDF renderer loads only
+ * when opening a document. No PDF scripts or third-party iframe is embedded.
+ * If unavailable, explicit download remains usable instead of a blank screen. */
 export function SigningPanel({flow, preparation, title, preview}: {
   flow: SigningWorkflow; preparation: PrepareSigningInput; title: string; preview?: ReactNode;
 }) {
@@ -81,7 +88,7 @@ export function SigningPanel({flow, preparation, title, preview}: {
       {url && !['cancelled', 'expired', 'failed'].includes(state.phase) && <div className="ls-v2-layout">
         <div className="ls-v2-document">
           <div className="ls-v2-document-title"><span>Documento para revisar</span><span>PDF</span></div>
-          {preview ?? (canonical && <PdfPreview pdf={canonical} position={preparation.position} onReviewedPage={() => setPreviewReady(true)} onUnavailable={() => setPreviewReady(false)}/>)}
+          {preview ?? (canonical && <PreviewBoundary key={state.intentId} onUnavailable={() => setPreviewReady(false)}><Suspense fallback={<p role="status">Cargando visor PDF…</p>}><PdfPreview pdf={canonical} position={preparation.position} onReviewedPage={() => setPreviewReady(true)} onUnavailable={() => setPreviewReady(false)}/></Suspense></PreviewBoundary>)}
           <a className="ls-v2-download" href={url} download={state.filename} onClick={() => setDownloaded(true)}>Descargar documento PDF <span aria-hidden="true">↓</span></a>
         </div>
         <div className="ls-v2-actions">
