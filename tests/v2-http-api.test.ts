@@ -43,13 +43,14 @@ describe('v2 HTTP transport: no live services', () => {
     await expect(api(fetcher).prepare(input, signal())).rejects.toMatchObject({code: 'INVALID_RESPONSE'});
     expect(fetcher).toHaveBeenCalledOnce();
   });
-  it('only uploads the PDF and three public intent fields', async () => {
+  it('only uploads raw PDF bytes with the bound intent and nonce headers', async () => {
     const value = metadata();
     const fetcher = vi.fn(async (_url, init) => {
-      const form = init?.body as FormData;
-      expect(Array.from(form.keys()).sort()).toEqual(['intentId','nonce','pdf','sha256']);
-      expect((form.get('pdf') as File).type).toBe('application/pdf');
-      expect(new Headers(init?.headers).has('Content-Type')).toBe(false);
+      const headers = new Headers(init?.headers);
+      expect(headers.get('Content-Type')).toBe('application/pdf');
+      expect(headers.get('X-LeapSign-Intent')).toBe(value.intent.id);
+      expect(headers.get('X-LeapSign-Nonce')).toBe(value.intent.nonce);
+      expect(init?.body).toBeInstanceOf(Uint8Array);
       return Response.json(report());
     });
     await api(fetcher).submit({intentId: value.intent.id, nonce: value.intent.nonce, pdf: new TextEncoder().encode('%PDF-synthetic'), sha256: 'b'.repeat(64), password: 'never sent'} as Parameters<V2HttpSigningApi['submit']>[0], signal());

@@ -1,11 +1,15 @@
 {
   "name": "leapsign-v2-ui-preview",
   "compatibility_date": "2026-10-19",
+  "main": "./src/worker.ts",
   "workers_dev": true,
   "preview_urls": false,
-  "routes": [],
+  "routes": [
+    { "pattern": "pruebas.leapsign.app", "custom_domain": true }
+  ],
   "assets": {
     "directory": "./dist",
+    "binding": "ASSETS",
     "not_found_handling": "none"
   },
   "observability": { "enabled": false }

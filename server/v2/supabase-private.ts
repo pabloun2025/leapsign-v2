@@ -35,6 +35,20 @@ export function supabasePrivate(options: Options) {
         return typeof user.id==='string' && /^[a-f0-9]{8}-(?:[a-f0-9]{4}-){3}[a-f0-9]{12}$/i.test(user.id) && !user.is_anonymous && Boolean(user.email_confirmed_at) ? user.id : null;
       } catch {return null;}
     },
+    /** Verifies a browser-presented v2 access token remotely before the session
+     * handler places it in an HTTP-only cookie.  This deliberately shares the
+     * exact checks used for cookie authentication and never decodes a JWT.
+     */
+    async verifyAccessToken(token: string, caller: AbortSignal): Promise<string|null> {
+      if (typeof token !== 'string' || token.length<20 || token.length>8192 || !/^[a-zA-Z0-9._-]+$/.test(token)) return null;
+      try {
+        const signal=AbortSignal.any([caller,AbortSignal.timeout(5000)]);
+        const response=await fetcher(url.origin+'/auth/v1/user',{headers:{apikey:options.publicKey,Authorization:`Bearer ${token}`},redirect:'error',cache:'no-store',signal});
+        if(response.headers.get('Content-Type')?.split(';')[0]!=='application/json'){await response.body?.cancel();return null;}
+        const user=JSON.parse(new TextDecoder('utf-8',{fatal:true}).decode(await bounded(response,32768,signal)));
+        return typeof user.id==='string' && /^[a-f0-9]{8}-(?:[a-f0-9]{4}-){3}[a-f0-9]{12}$/i.test(user.id) && !user.is_anonymous && Boolean(user.email_confirmed_at) ? user.id : null;
+      } catch {return null;}
+    },
     async readPrivateObject(path: string, maxBytes: number): Promise<Uint8Array> {
       if(!/^[a-f0-9-]{36}\/versions\/[a-f0-9-]{36}\.pdf$/.test(path) || !Number.isInteger(maxBytes) || maxBytes<5 || maxBytes>MAX_PDF_BYTES)throw Error('UNAVAILABLE');
       const signal=AbortSignal.timeout(10000);

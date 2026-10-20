@@ -100,11 +100,9 @@ export class V2HttpSigningApi implements SigningWorkflowApi {
     if (!/^[a-f0-9-]{36}$/.test(input.intentId) || typeof input.nonce !== 'string' || !/^[a-zA-Z0-9_-]{43}$/.test(input.nonce) ||
         !/^[a-f0-9]{64}$/.test(input.sha256) || !(input.pdf instanceof Uint8Array) || input.pdf.length < 5 || input.pdf.length > MAX_PDF_BYTES) throw new SigningTransportError('INVALID_REQUEST');
     const signal = this.signal(caller);
-    const form = new FormData();
-    // Explicit allowlist: never JSON.stringify a local signing input object.
-    form.set('intentId', input.intentId); form.set('nonce', input.nonce); form.set('sha256', input.sha256);
-    form.set('pdf', new Blob([new Uint8Array(input.pdf).buffer], {type: 'application/pdf'}), 'signed.pdf');
-    const value = await this.json(await this.request('/api/v2/signing/submit', {method: 'POST', body: form}, signal, 'application/json'), signal);
+    // Raw bounded PDF only: certificates, passwords and arbitrary multipart
+    // fields have no transport representation. The server computes its hash.
+    const value = await this.json(await this.request('/api/v2/signing/submit', {method: 'POST', headers:{'Content-Type':'application/pdf','X-LeapSign-Intent':input.intentId,'X-LeapSign-Nonce':input.nonce}, body:new Uint8Array(input.pdf)}, signal, 'application/json'), signal);
     if (!isPublicValidationReport(value)) throw new SigningTransportError('INVALID_RESPONSE');
     return value;
   }
