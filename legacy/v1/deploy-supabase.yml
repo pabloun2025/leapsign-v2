@@ -1,4 +1,4 @@
-name: Deploy Supabase
+name: Archived v1 deployment - never run from v2
 
 on:
   workflow_dispatch:

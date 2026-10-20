@@ -1,16 +1,15 @@
 {
-  "name": "firmador",
+  "name": "leapsign-v2",
   "private": true,
   "license": "AGPL-3.0-only",
   "version": "0.1.0",
   "type": "module",
   "scripts": {
-    "dev": "vite",
-    "build": "tsc -b && vite build",
+    "dev": "vite --config v2/preview/vite.config.mts",
+    "build": "tsc -b && vite build --config v2/preview/vite.config.mts",
     "test": "vitest run",
     "test:watch": "vitest",
-    "check:supabase": "tsx server/check-supabase.ts",
-    "server": "tsx server/index.ts"
+    "build:preview-package": "node scripts/build-v2-preview.mjs"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.117.3",

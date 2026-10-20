@@ -1,4 +1,18 @@
-# LeapSign
+# LeapSign Firmador v2 — desarrollo independiente
+
+Este es el repositorio exclusivo de **v2**, aún sin aplicación pública funcional.
+Lee [el resumen de continuidad](docs/v2/HANDOFF.md) y
+[la configuración del nuevo entorno Codex](docs/v2/CLOUD-SETUP.md).
+
+`npm run dev` y `npm run build` usan únicamente el **laboratorio de interfaz v2**,
+no el frontend heredado de v1. No uses certificados reales en ese laboratorio.
+No hay un comando de publicación automática. La configuración de v1 está
+archivada en `legacy/v1`; no ejecutarla desde aquí.
+
+El texto siguiente se conserva como descripción histórica de v1, no como
+lista de capacidades ya integradas en v2 ni autorización para desplegar v1.
+
+## Descripción histórica de LeapSign v1
 
 LeapSign coordina la firma secuencial de documentos PDF: mantiene una única
 versión vigente, ordena el acceso por turnos y permite al creador controlar el
