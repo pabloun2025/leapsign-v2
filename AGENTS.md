@@ -14,6 +14,20 @@ funcional: no introducir certificados reales. No desplegar este laboratorio
 como una aplicación completa. No aplicar otra vez las migraciones 001/002.
 No crear worktrees, cambiar rama ni importar secretos del entorno de v1.
 
+## Guías de proyecto importadas
+
+Estas guías son documentación local del proyecto, **no skills nativas de
+Codex ni plugins instalados**. Leer y aplicar únicamente la que corresponda:
+
+- Antes de diseñar, construir, pulir o revisar visualmente una interfaz,
+  consultar `docs/v2/guides/frontend-design.md`.
+- Antes de escribir, revisar o refactorizar código, consultar
+  `docs/v2/guides/karpathy-guidelines.md`.
+
+La procedencia, revisión exacta y licencias se registran en
+`docs/v2/guides/THIRD-PARTY-GUIDANCE.md`. Estas guías complementan, pero no
+sustituyen, las restricciones de seguridad y aislamiento de este archivo.
+
 Preservar firma secuencial, documentos binarios, autorización por propietario y
 plazos publicados. Revisar `docs/security-audit.md` para límites y pendientes.
 Las operaciones facturables de Edge pasan por `_shared/economic-guard.ts` y la
