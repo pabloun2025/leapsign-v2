@@ -13,6 +13,13 @@ export function reserveCanonicalObjectNumbers(pdf) {
   while (registry.nextObjectNumber < size) registry.allocateRef();
 }
 
+/** Text matching the compact FirmaEC-style layout. It is visual metadata only;
+ * the CMS signature and independent validator remain authoritative. */
+export function firmaecAppearanceText(subject) {
+  if (typeof subject !== 'string' || !/^[A-ZÁÉÍÓÚÜÑ0-9 .,'-]{3,96}$/.test(subject)) throw new Error('INVALID_SIGNER_NAME');
+  return ['Validar únicamente en FirmaEC.', 'Firmado electrónicamente por:', subject];
+}
+
 export function prepareSyntheticAppearance(pdf, input, engine, QRCode) {
   const {PdfDict, PdfName, PdfNumber, PdfArray, PdfStream} = engine;
   const page = pdf.getPages().at(-1);
@@ -20,7 +27,9 @@ export function prepareSyntheticAppearance(pdf, input, engine, QRCode) {
   const field = pdf.getOrCreateForm().createSignatureField(input.fieldName);
   const dict = field.getDict();
   const n = value => PdfNumber.of(value);
-  let graphic = 'q 1 1 1 rg 0 0 250 80 re f 0.1 0.35 0.25 RG 1 w 1 1 248 78 re S BT /F1 9 Tf 85 55 Td (LeapSign v2 - synthetic test) Tj ET Q';
+  const [verification, signedBy, subject] = firmaecAppearanceText(input.signerName ?? 'FIRMANTE SINTÉTICO');
+  const escape = value => value.replace(/([()\\])/g, '\\$1');
+  let graphic = `q 1 1 1 rg 0 0 250 80 re f 0 0 0 rg BT /F1 6 Tf 84 62 Td (${escape(verification)}) Tj 0 -9 Td (${escape(signedBy)}) Tj /F1 10 Tf 0 -11 Td (${escape(subject)}) Tj ET Q`;
   if (input.qr) {
     if (!QRCode || input.qr !== 'urn:leapsign:signature:00000000-0000-4000-8000-000000000001') throw new Error('SYNTHETIC_QR_ONLY');
     const matrix = QRCode.create(input.qr, {errorCorrectionLevel: 'M'}).modules;
