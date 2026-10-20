@@ -135,3 +135,24 @@ previa. El trabajo se guarda sólo en commits locales de la rama v2.
 Las carpetas preexistentes `docs/guia-usuario` y `docs/guia-video-movil` se
 conservan sin incluirlas en los cambios v2. No hay escrituras externas, cambios
 de permisos, secretos nuevos, cuentas de prueba remotas ni PDF reales.
+
+### Continuación del 20 de octubre: preparación HTTP del servidor
+
+`server/v2/prepare-api.ts` implementa los handlers aislados de preparación y
+descarga consumidos por el transporte del navegador. Requieren sesión verificada,
+presupuesto compartido reservado antes de cargar, comprobación de turno, hash de
+la versión inmutable, persistencia atómica y caducidad de intención. El POST
+comprueba Origin y cabecera propia; ambas rutas rechazan navegación cross-site,
+parámetros adicionales y destinos distintos de v2. El JSON tiene límite de 2 KiB
+y lectura de cinco segundos. No se aceptan contraseñas ni certificados.
+
+Los adaptadores se inyectan como puertos de servidor: **no hay adaptadores reales
+de autenticación, almacenamiento o persistencia conectados todavía**, ni rutas
+montadas en v1. Las cuotas y la comparación atómica deben implementarse en esos
+adaptadores antes de habilitar el servicio. Esta entrega no constituye un flujo
+end-to-end ni sustituye la validación criptográfica del PDF firmado.
+
+Verificación actual: `npm test`, 196 pruebas correctas en 23 archivos, incluidas
+14 nuevas pruebas de estas rutas con dobles sintéticos; `npm run build` correcto.
+Los hashes de los bundles principales v1 siguen siendo `index-Pgn7XpZE.css` e
+`index-DiionqN-.js`. No se ha publicado, hecho push ni modificado infraestructura.
