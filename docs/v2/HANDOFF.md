@@ -28,10 +28,12 @@ motor de producto (tres firmas consecutivas, contraseña errónea, sujeto visibl
 y QR leído del PDF renderizado). La concurrencia SQL con conexiones PostgreSQL
 independientes y la interoperabilidad con un certificado real siguen pendientes.
 
-No está desplegado todavía el flujo completo: falta aplicar únicamente la
-migración 003 al backend v2 y disponer de una URL HTTPS privada para el validador
-Python con su token compartido. No publicar el Worker con las banderas activas
-hasta que ambas dependencias estén disponibles.
+La migración 003 quedó aplicada al backend v2 el 20 de octubre de 2026: 12 RPC
+privadas `SECURITY DEFINER`, ejecución exclusiva de `service_role` y ninguna
+ejecución para `anon` o `authenticated`. Las banderas permanecen apagadas.
+No está desplegado todavía el flujo completo: falta disponer de una URL HTTPS
+privada para el validador Python con su token compartido. No publicar el Worker
+con las banderas activas hasta que esa dependencia esté disponible.
 
 ## Historia anterior
 
