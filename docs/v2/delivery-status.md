@@ -156,3 +156,39 @@ Verificación actual: `npm test`, 196 pruebas correctas en 23 archivos, incluida
 14 nuevas pruebas de estas rutas con dobles sintéticos; `npm run build` correcto.
 Los hashes de los bundles principales v1 siguen siendo `index-Pgn7XpZE.css` e
 `index-DiionqN-.js`. No se ha publicado, hecho push ni modificado infraestructura.
+
+### Adaptadores privados de preparación: continuación
+
+- `server/v2/postgres-preparation.ts`: consultas parametrizadas para turno,
+  versión y lectura de intención; verifica tamaño/hash al leer almacenamiento.
+  Emisión mediante RPC y comparación de versión/rol/identidad dentro de una
+  transacción que revierte también el evento de auditoría ante obsolescencia.
+  El driver debe fijar una conexión durante toda la transacción. El nonce solo
+  se persiste como SHA-256; la descarga autenticada usa un marcador interno que
+  nunca se devuelve al navegador ni sirve para enviar una firma.
+- `server/v2/supabase-private.ts`: verificación remota de sesión con `/auth/v1/user`
+  (no basta decodificar JWT), rechaza usuario anónimo o correo sin confirmar;
+  lectura privada por streaming con tamaño/tiempo limitados, sin redirecciones.
+  Exige configuración explícita del proyecto dedicado v2 y rechaza el host v1.
+  Nunca lee variables de producción como alternativa automática.
+- `v2/migrations/002_document_filename.sql`: nombre de descarga por documento.
+  Archivo preparado solamente; no aplicado fuera de la base efímera de pruebas.
+- `scripts/test-v2-preparation-db.ts`: 12 comprobaciones correctas sobre PGlite,
+  incluidas autorización, rollback de intención/auditoría, nombre, hash y descarga.
+  Una conexión serializada no prueba concurrencia real entre conexiones.
+- `tests/v2-supabase-private.test.ts`: 13 casos con red simulada. Suite completa:
+  209 pruebas correctas; compilación correcta, bundles principales v1 idénticos.
+
+Pendiente antes de cualquier habilitación: proyecto dedicado, driver privado y
+grants mínimos, puente de reserva de presupuesto compartido que falle cerrado,
+intercambio de sesión que emita la cookie `__Host-leapsign-v2` Secure/HttpOnly/
+SameSite=Strict/Path=/, recepción y persistencia transaccional del PDF firmado,
+consulta de recibo y recorrido completo con navegador. Los adaptadores no están
+montados en un servidor público ni conectados a servicios reales. No hay escritura
+remota, publicación ni modificación del login de v1.
+
+Reproducir la prueba SQL aislada (PGlite ya instalado fuera del repositorio):
+
+```sh
+PGLITE_MODULE=/workspace/scratch/v2-sql/node_modules/@electric-sql/pglite/dist/index.js node_modules/.bin/tsx scripts/test-v2-preparation-db.ts
+```

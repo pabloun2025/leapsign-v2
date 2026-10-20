@@ -1,0 +1,16 @@
+import {describe,it,expect,vi} from 'vitest';
+import {supabasePrivate} from '../server/v2/supabase-private';
+const actor='12345678-1234-4234-8234-123456789abc';
+const config={projectUrl:'https://abcdefghijklmnopqrst.supabase.co',publicKey:'public-synthetic',serviceKey:'service-synthetic',bucket:'v2-private'};
+const request=()=>new Request('https://leapsign.app',{headers:{Cookie:'__Host-leapsign-v2=synthetic.token.value.only'}});
+describe('v2 private auth/storage adapters, mocked network only',()=>{
+ it('explicitly rejects the v1 project',()=>expect(()=>supabasePrivate({...config,projectUrl:'https://lgsdoutarthfymbjgdrj.supabase.co'})).toThrow('V2_CONFIGURATION_REQUIRED'));
+ it.each(['http://abcdefghijklmnopqrst.supabase.co','https://evil.example','https://abcdefghijklmnopqrst.supabase.co/path'])('rejects non-dedicated endpoints',projectUrl=>expect(()=>supabasePrivate({...config,projectUrl})).toThrow());
+ it('verifies a cookie with the authentication server, never by decoding JWT locally',async()=>{const fetcher=vi.fn(async()=>Response.json({id:actor,email_confirmed_at:'2026-10-20',is_anonymous:false}));expect(await supabasePrivate({...config,fetch:fetcher}).authenticate(request())).toBe(actor);const [url,init]=fetcher.mock.calls[0] as unknown as [string,RequestInit];expect(url).toBe(config.projectUrl+'/auth/v1/user');expect(JSON.stringify(init)).not.toContain(config.serviceKey);});
+ it('does not call the server for absent or duplicate cookies',async()=>{const fetcher=vi.fn();const adapter=supabasePrivate({...config,fetch:fetcher});expect(await adapter.authenticate(new Request('https://leapsign.app'))).toBeNull();expect(await adapter.authenticate(new Request('https://leapsign.app',{headers:{Cookie:'__Host-leapsign-v2=one; __Host-leapsign-v2=two'}}))).toBeNull();expect(fetcher).not.toHaveBeenCalled();});
+ it.each([{id:actor,is_anonymous:true,email_confirmed_at:'date'},{id:actor},{id:'malformed',email_confirmed_at:'date'}])('rejects unverified/anonymous responses',async user=>expect(await supabasePrivate({...config,fetch:async()=>Response.json(user)}).authenticate(request())).toBeNull());
+ it('does not disclose authentication server errors',async()=>expect(await supabasePrivate({...config,fetch:async()=>{throw Error('secret');}}).authenticate(request())).toBeNull());
+ it('streams only the permitted immutable private object',async()=>{const fetcher=vi.fn(async()=>new Response('%PDF-fixture',{headers:{'Content-Type':'application/pdf'}}));const bytes=await supabasePrivate({...config,fetch:fetcher}).readPrivateObject(`${actor}/versions/${actor}.pdf`,12);expect(new TextDecoder().decode(bytes)).toBe('%PDF-fixture');});
+ it('rejects oversized bodies even without content length',async()=>{const adapter=supabasePrivate({...config,fetch:async()=>new Response('%PDF-too-many-bytes',{headers:{'Content-Type':'application/pdf'}})});await expect(adapter.readPrivateObject(`${actor}/versions/${actor}.pdf`,5)).rejects.toThrow();});
+ it('rejects traversal without making a request',async()=>{const fetcher=vi.fn();await expect(supabasePrivate({...config,fetch:fetcher}).readPrivateObject('../secrets',100)).rejects.toThrow();expect(fetcher).not.toHaveBeenCalled();});
+});
