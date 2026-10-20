@@ -1,0 +1,8 @@
+import {describe,expect,it,vi} from 'vitest';
+import {createReceiptHandler,type ReceiptDependencies} from '../server/v2/receipts-api';
+const origin='https://pruebas.leapsign.app';const actor='11111111-1111-4111-8111-111111111111';const intent='22222222-2222-4222-8222-222222222222';
+const report={valid:true as const,policy:'leapsign-v2-strict-offline-1' as const,baseSha256:'a'.repeat(64),signedSha256:'b'.repeat(64),previousSignatureCount:0,signatureCount:1,revocation:'good' as const,certificate:{subject:'Synthetic',issuer:'Synthetic CA',serial:'1',fingerprint:'c'.repeat(64),notBefore:'2026-01-01T00:00:00Z',notAfter:'2027-01-01T00:00:00Z'}};
+describe('v2 receipt API',()=>{
+ it('recovers the exact validated result after an uncertain response',async()=>{const load=vi.fn(async()=>({state:'validated' as const,report}));const deps:ReceiptDependencies={origin,authenticate:async()=>actor,reserve:async()=>{},load};const response=await createReceiptHandler(deps)(new Request(`${origin}/api/v2/signing/intents/${intent}/receipt`,{headers:{'X-LeapSign-Client':'v2'}}));expect(response.status).toBe(200);expect(await response.json()).toEqual({state:'validated',report});expect(load).toHaveBeenCalledWith(intent,actor);});
+ it('returns a stable pending response without replaying submission',async()=>{const deps:ReceiptDependencies={origin,authenticate:async()=>actor,reserve:async()=>{},load:async()=>({state:'signed_pending_validation'})};const response=await createReceiptHandler(deps)(new Request(`${origin}/api/v2/signing/intents/${intent}/receipt`,{headers:{'X-LeapSign-Client':'v2'}}));expect(response.status).toBe(202);expect(await response.json()).toEqual({state:'signed_pending_validation'});});
+});
