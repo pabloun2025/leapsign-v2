@@ -1,12 +1,14 @@
 import {createHash} from 'node:crypto';
 import type {SigningIntent, PrepareSigningInput} from '../../src/v2/contracts';
-import {MAX_PDF_BYTES, V2_ORIGIN, signingFlags, type SigningFlags} from '../../src/v2/policy';
+import {MAX_PDF_BYTES, V2_ORIGIN, assertV2Origin, signingFlags, type SigningFlags} from '../../src/v2/policy';
 import {isPublicSigningIntent} from '../../src/v2/public-data';
 import {issueIntent, authorizeIntent, type CanonicalStage} from './intents';
 
 /** Server-only ports. Adapters MUST use verified sessions, atomic shared budgets
  * and private immutable storage. This module is not mounted in v1. */
 export interface PreparationDependencies {
+  /** Explicit deployment origin; staging and production never share sessions. */
+  origin?: string;
   flags: SigningFlags;
   authenticate(request: Request): Promise<string | null>;
   reserve(actor: string, operation: 'prepare' | 'download'): Promise<void>;
@@ -44,14 +46,16 @@ function checkPdf(pdf: Uint8Array, hash: string) {
   if (pdf.length < 5 || pdf.length > MAX_PDF_BYTES || new TextDecoder().decode(pdf.subarray(0,5)) !== '%PDF-' || createHash('sha256').update(pdf).digest('hex') !== hash) throw Error();
 }
 export function createPreparationHandler(deps: PreparationDependencies) {
+  const origin=deps.origin ?? V2_ORIGIN;
+  assertV2Origin(origin);
   return async (request: Request): Promise<Response> => {
     const url = new URL(request.url); const flags = signingFlags(deps.flags);
-    if (url.origin !== V2_ORIGIN || !flags.firmaecProfile || (!flags.direct && !flags.external)) return json({code:'DISABLED'},503);
+    if (url.origin !== origin || !flags.firmaecProfile || (!flags.direct && !flags.external)) return json({code:'DISABLED'},503);
     const prepare = url.pathname === '/api/v2/signing/prepare' && request.method === 'POST';
     const download = /^\/api\/v2\/signing\/intents\/([a-f0-9-]{36})\/pdf$/.exec(url.pathname);
     if (url.search || (!prepare && !(download && request.method === 'GET'))) return json({code:'NOT_FOUND'},404);
     // Cookie-authenticated mutations require a same-origin custom-header request.
-    if (request.headers.get('X-LeapSign-Client') !== 'v2' || (prepare && request.headers.get('Origin') !== V2_ORIGIN) || (request.headers.has('Sec-Fetch-Site') && request.headers.get('Sec-Fetch-Site') !== 'same-origin')) return json({code:'FORBIDDEN'},403);
+    if (request.headers.get('X-LeapSign-Client') !== 'v2' || (prepare && request.headers.get('Origin') !== origin) || (request.headers.has('Sec-Fetch-Site') && request.headers.get('Sec-Fetch-Site') !== 'same-origin')) return json({code:'FORBIDDEN'},403);
     try {
       const actor = await deps.authenticate(request); if (!actor) return json({code:'UNAUTHENTICATED'},401);
       await deps.reserve(actor,prepare ? 'prepare' : 'download');

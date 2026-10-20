@@ -11,6 +11,7 @@ export interface TransactionalSql extends SqlConnection {
   transaction<T>(action: (connection: SqlConnection) => Promise<T>): Promise<T>;
 }
 type Options = {
+  origin?: string;
   database: TransactionalSql;
   flags: SigningFlags;
   authenticate: PreparationDependencies['authenticate'];
@@ -35,7 +36,7 @@ const stageQuery = `select d.id as "documentId", v.id as "versionId", v.sha256 a
 export function postgresPreparation(options: Options): PreparationDependencies {
   const db = options.database;
   return {
-    flags:options.flags, authenticate:options.authenticate, reserve:options.reserve,
+    origin:options.origin, flags:options.flags, authenticate:options.authenticate, reserve:options.reserve,
     async loadStage(documentId, actor) {
       const row = one((await db.query(stageQuery,[uuid(documentId),uuid(actor)])).rows);
       // No nonce, password, storage path or unrelated metadata in public results.

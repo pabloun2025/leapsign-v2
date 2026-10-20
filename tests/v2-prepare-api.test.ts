@@ -12,6 +12,17 @@ function fixture() {
  return {deps,intent,request,handle:createPreparationHandler(deps)};
 }
 describe('v2 preparation routes, isolated server ports',()=>{
+ it('supports explicitly configured staging without accepting production requests',async()=>{
+  const f=fixture();f.deps.origin='https://pruebas.leapsign.app';const handler=createPreparationHandler(f.deps);
+  expect((await handler(f.request())).status).toBe(503);
+  const request=new Request('https://pruebas.leapsign.app/api/v2/signing/prepare',{method:'POST',headers:{'Content-Type':'application/json',Origin:'https://pruebas.leapsign.app','X-LeapSign-Client':'v2'},body:JSON.stringify(input)});
+  expect((await handler(request)).status).toBe(200);
+ });
+ it('rejects production-origin POST against staging',async()=>{
+  const f=fixture();f.deps.origin='https://pruebas.leapsign.app';
+  expect((await createPreparationHandler(f.deps)(new Request('https://pruebas.leapsign.app/api/v2/signing/prepare',{method:'POST',headers:{Origin:'https://leapsign.app','X-LeapSign-Client':'v2'}}))).status).toBe(403);
+ });
+ it('rejects arbitrary configured origins before handling requests',()=>{const f=fixture();f.deps.origin='https://firma.veryfacil.org';expect(()=>createPreparationHandler(f.deps)).toThrow();});
  it('reserves budget and persists a bound intent before returning its exact PDF path',async()=>{const f=fixture();const r=await f.handle(f.request());expect(r.status).toBe(200);const body=await r.json();expect(body.filename).toBe('Contrato.pdf');expect(body.pdfPath).toBe(`/api/v2/signing/intents/${body.intent.id}/pdf`);expect(f.deps.reserve).toHaveBeenCalledWith('ana','prepare');expect(f.deps.persistIntent).toHaveBeenCalledOnce();expect(r.headers.get('Cache-Control')).toBe('no-store');});
  it('fails closed with disabled flags',async()=>{const f=fixture();f.deps.flags={};expect((await f.handle(f.request())).status).toBe(503);expect(f.deps.authenticate).not.toHaveBeenCalled();});
  it('blocks cross-origin requests before authentication',async()=>{const f=fixture();expect((await f.handle(f.request(input,'https://evil.example'))).status).toBe(403);expect(f.deps.authenticate).not.toHaveBeenCalled();});

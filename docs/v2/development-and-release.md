@@ -4,8 +4,10 @@
 sintético; hay componentes UI y coordinador, pero no endpoints públicos conectados.
 El dominio reservado es `https://leapsign.app`.
 `firma.veryfacil.org`, su Worker y Supabase permanecen sin cambios.
-Toda publicación está suspendida por el propietario. Las instrucciones de
-publicación siguientes son una guía futura, no autorización para ejecutarla.
+El propietario ha aprobado preparar un despliegue independiente empezando por
+`pruebas.leapsign.app`. No se autoriza tocar v1 ni activar planes de pago.
+Las puertas técnicas siguientes siguen pendientes: no publicar el laboratorio
+como si fuera un flujo funcional. Véase [plan de pruebas](staging-rollout.md).
 
 ## Verificaciones locales reproducibles
 

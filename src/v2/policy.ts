@@ -1,5 +1,6 @@
 export type SigningFlags = { DIRECT_P12_SIGNING_ENABLED?: string; EXTERNAL_SIGNATURE_ENABLED?: string; FIRMAEC_COMPATIBILITY_PROFILE_ENABLED?: string };
 export const V2_ORIGIN = 'https://leapsign.app';
+export const V2_STAGING_ORIGIN = 'https://pruebas.leapsign.app';
 export const MAX_CERTIFICATE_BYTES = 1024 * 1024;
 export const MAX_PDF_BYTES = 10 * 1024 * 1024;
 export const INTENT_LIFETIME_MS = 5 * 60_000;
@@ -16,5 +17,5 @@ export function validateCertificateFile(file: { name: string; size: number }) {
   }
 }
 export function assertV2Origin(origin: string) {
-  if (origin !== V2_ORIGIN) throw new Error('Esta función solo está disponible en LeapSign v2.');
+  if (origin !== V2_ORIGIN && origin !== V2_STAGING_ORIGIN) throw new Error('Esta función solo está disponible en LeapSign v2.');
 }
