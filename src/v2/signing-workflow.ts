@@ -15,7 +15,7 @@ export type WorkflowPhase = 'idle' | 'preparing' | 'ready' | 'signing' | 'valida
 export type WorkflowSnapshot = {
   phase: WorkflowPhase; filename?: string; expiresAt?: string; intentId?: string;
   signatureCount?: number; message?: string; directEnabled: boolean; externalEnabled: boolean;
-  outcomeUnknown?: boolean;
+  outcomeUnknown?: boolean; position?: PrepareSigningInput['position'];
 };
 const messages = {
   DISABLED: 'La firma no está disponible en este momento.',
@@ -92,7 +92,8 @@ export class SigningWorkflow {
       if (i.documentId !== input.documentId || i.signerId !== this.options.actorId || i.profile !== input.profile ||
           !['signature_intent_issued', 'awaiting_local_signature'].includes(i.state) ||
           !['id', 'versionId', 'stageId', 'nonce', 'correlationId'].every(key => typeof i[key as keyof SigningIntent] === 'string' && String(i[key as keyof SigningIntent]).length > 0 && String(i[key as keyof SigningIntent]).length <= 128) ||
-          !(['page', 'x', 'y', 'width', 'height'] as const).every(key => Number.isFinite(i.position[key]) && i.position[key] === input.position[key]) ||
+          !(['page', 'x', 'y', 'width', 'height'] as const).every(key => Number.isFinite(i.position[key])) ||
+          (input.position.page!==0&&!(['page', 'x', 'y', 'width', 'height'] as const).every(key=>i.position[key]===input.position[key])) ||
           !Number.isFinite(issued) || !Number.isFinite(expires) || issued > this.now() + 30_000 || expires <= this.now() || expires <= issued || expires - issued > INTENT_LIFETIME_MS ||
           !(value.pdf instanceof Uint8Array) || value.pdf.length < 5 || value.pdf.length > MAX_PDF_BYTES ||
           new TextDecoder().decode(value.pdf.subarray(0, 5)) !== '%PDF-' ||
@@ -101,7 +102,7 @@ export class SigningWorkflow {
           !/^[a-f0-9]{64}$/.test(i.baseSha256) || await bytesHash(value.pdf) !== i.baseSha256) throw new WorkflowError('PREPARATION_FAILED');
       this.stillCurrent(generation);
       this.prepared = {filename: value.filename, previousSignatureCount: value.previousSignatureCount, pdf: new Uint8Array(value.pdf), intent: {...i, position: {...i.position}}};
-      this.update({phase: 'ready', filename: value.filename, intentId: i.id, expiresAt: i.expiresAt});
+      this.update({phase: 'ready', filename: value.filename, intentId: i.id, expiresAt: i.expiresAt,position:{...i.position}});
     } catch (error) {
       if (generation !== this.generation || this.disposed) throw new WorkflowError('CANCELLED');
       this.prepared = undefined;

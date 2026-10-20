@@ -1,0 +1,53 @@
+import {createHash,randomUUID} from 'node:crypto';
+import type {SigningIntent,SignatureValidationResult} from '../../src/v2/contracts';
+import type {CanonicalStage} from './intents';
+import type {PreparedPdf} from './private-validator';
+
+type Database={rpc<T>(name:string,args:Record<string,unknown>,decode:(value:unknown)=>T):Promise<T>;writePrivateObject(path:string,pdf:Uint8Array):Promise<void>;readPrivateObject(path:string,maxBytes:number):Promise<Uint8Array>};
+type Validator={prepare(pdf:Uint8Array):Promise<PreparedPdf>};
+const unavailable=()=>Error('UNAVAILABLE');
+const object=(value:unknown):value is Record<string,unknown>=>!!value&&typeof value==='object'&&!Array.isArray(value);
+const uuid=(value:unknown):value is string=>typeof value==='string'&&/^[a-f0-9]{8}-(?:[a-f0-9]{4}-){3}[a-f0-9]{12}$/i.test(value);
+const hash=(value:unknown):value is string=>typeof value==='string'&&/^[a-f0-9]{64}$/.test(value);
+const filename=(value:unknown):value is string=>typeof value==='string'&&/^[^\r\n/\\]{1,124}\.pdf$/i.test(value);
+const storage=(value:unknown):value is string=>typeof value==='string'&&/^[a-f0-9-]{36}\/versions\/[a-f0-9-]{36}\.pdf$/i.test(value);
+const digest=(value:Uint8Array|string)=>createHash('sha256').update(value).digest('hex');
+
+function publicProcess(value:unknown){
+ if(!object(value)||!uuid(value.id)||!filename(value.filename)||value.status!=='ready_for_signer'||!Number.isInteger(value.signerCount))throw unavailable();
+ return{id:value.id,filename:value.filename,status:value.status,signerCount:Number(value.signerCount)} as const;
+}
+function download(value:unknown){
+ if(!object(value)||!uuid(value.documentId)||!uuid(value.versionId)||!filename(value.filename)||!storage(value.storagePath)||!Number.isInteger(value.byteSize)||Number(value.byteSize)<5||!hash(value.sha256))throw unavailable();
+ return value as {documentId:string;versionId:string;filename:string;storagePath:string;byteSize:number;sha256:string};
+}
+function stage(value:unknown){
+ if(!object(value)||![value.documentId,value.versionId,value.stageId,value.signerId].every(uuid)||!hash(value.baseSha256)||typeof value.role!=='string'||!filename(value.filename)||!storage(value.storagePath)||!Number.isInteger(value.pageCount)||!Number.isInteger(value.previousSignatureCount)||!Number.isInteger(value.byteSize)||typeof value.pageWidth!=='number'||typeof value.pageHeight!=='number')throw unavailable();
+ return value as CanonicalStage&{filename:string;previousSignatureCount:number;storagePath:string;byteSize:number};
+}
+function intent(value:unknown,nonce:string):SigningIntent{
+ if(!object(value)||![value.id,value.documentId,value.versionId,value.stageId,value.signerId,value.correlationId].every(uuid)||!hash(value.baseSha256)||value.profile!=='firmaec-qr-compatible'||typeof value.role!=='string'||!object(value.position)||typeof value.issuedAt!=='string'||typeof value.expiresAt!=='string'||value.state!=='signature_intent_issued')throw unavailable();
+ return{...value,nonce} as SigningIntent;
+}
+
+/** Request-scoped adapters for the private v2 RPC and immutable object store. */
+export function createSupabaseRepositories(database:Database,validator:Validator){
+ const stages=new Map<string,ReturnType<typeof stage>>();
+ const versions=new Map<string,{path:string;bytes:number;hash:string}>();
+ return{
+  async reserve(actor:string,operation:string){await database.rpc('v2_reserve_operation',{p_actor_id:actor,p_operation:operation},value=>{if(!object(value)||value.reserved!==true)throw unavailable();return true;});},
+  async create(input:{ownerId:string;filename:string;pdf:Uint8Array;signers:string[]}){
+   const prepared=await validator.prepare(input.pdf);if(prepared.signatureCount+input.signers.length>20)throw unavailable();
+   const documentId=randomUUID(),versionId=randomUUID(),path=`${documentId}/versions/${versionId}.pdf`;
+   await database.writePrivateObject(path,prepared.pdf);
+   return database.rpc('v2_create_process',{p_owner_id:input.ownerId,p_document_id:documentId,p_version_id:versionId,p_filename:input.filename,p_sha256:prepared.sha256,p_byte_size:prepared.byteSize,p_page_count:prepared.pageCount,p_last_page_width:prepared.lastPageWidth,p_last_page_height:prepared.lastPageHeight,p_existing_signature_count:prepared.signatureCount,p_signer_emails:input.signers},publicProcess);
+  },
+  status(documentId:string,actor:string){return database.rpc('v2_get_process_status',{p_document_id:documentId,p_actor_id:actor},value=>value as never);},
+  async download(documentId:string,actor:string){const meta=await database.rpc('v2_get_authorized_download',{p_document_id:documentId,p_actor_id:actor},download);const pdf=await database.readPrivateObject(meta.storagePath,meta.byteSize);if(pdf.length!==meta.byteSize||digest(pdf)!==meta.sha256)throw unavailable();return{filename:meta.filename,pdf};},
+  async loadStage(documentId:string,actor:string){const value=await database.rpc('v2_get_signing_stage',{p_document_id:documentId,p_actor_id:actor},stage);stages.set(documentId,value);versions.set(value.versionId,{path:value.storagePath,bytes:value.byteSize,hash:value.baseSha256});return value;},
+  async loadCanonical(versionId:string,actor?:string){let meta=versions.get(versionId);if(!meta&&actor){const raw=await database.rpc('v2_get_version_storage',{p_version_id:versionId,p_actor_id:actor},value=>value);if(!object(raw)||!storage(raw.storagePath)||!Number.isInteger(raw.byteSize)||!hash(raw.sha256))throw unavailable();meta={path:raw.storagePath,bytes:Number(raw.byteSize),hash:raw.sha256};versions.set(versionId,meta);}if(!meta)throw unavailable();const pdf=await database.readPrivateObject(meta.path,meta.bytes);if(pdf.length!==meta.bytes||digest(pdf)!==meta.hash)throw unavailable();return pdf;},
+  async persistIntent(value:SigningIntent){const stored=await database.rpc('v2_issue_intent',{p_document_id:value.documentId,p_actor_id:value.signerId,p_intent_id:value.id,p_nonce_hash:digest(value.nonce),p_position:value.position,p_correlation_id:value.correlationId,p_issued_at:value.issuedAt,p_expires_at:value.expiresAt},raw=>intent(raw,value.nonce));if(stored.id!==value.id||stored.baseSha256!==value.baseSha256||stored.versionId!==value.versionId)throw unavailable();},
+  async loadIntent(id:string,actor:string){const value=await database.rpc('v2_get_intent_download',{p_intent_id:id,p_actor_id:actor},raw=>{if(!object(raw)||!object(raw.current)||!filename(raw.filename)||!storage(raw.storagePath)||!Number.isInteger(raw.byteSize))throw unavailable();const current=stage({...raw.current,filename:raw.filename,previousSignatureCount:raw.previousSignatureCount,storagePath:raw.storagePath,byteSize:raw.byteSize});return{intent:intent(raw.intent,'download-authorized-nonce-withheld-00000000000'),current};});stages.set(value.current.documentId,value.current);versions.set(value.current.versionId,{path:value.current.storagePath,bytes:value.current.byteSize,hash:value.current.baseSha256});return value.intent;},
+  async receipt(id:string,actor:string){return database.rpc('v2_get_intent_receipt',{p_intent_id:id,p_actor_id:actor},raw=>{if(!object(raw)||typeof raw.state!=='string')throw unavailable();return{state:raw.state,...(raw.report?{report:raw.report as SignatureValidationResult}:{})} as never;});},
+ };
+}

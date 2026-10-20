@@ -88,7 +88,7 @@ export function SigningPanel({flow, preparation, title, preview}: {
       {url && !['cancelled', 'expired', 'failed'].includes(state.phase) && <div className="ls-v2-layout">
         <div className="ls-v2-document">
           <div className="ls-v2-document-title"><span>Documento para revisar</span><span>PDF</span></div>
-          {preview ?? (canonical && <PreviewBoundary key={state.intentId} onUnavailable={() => setPreviewReady(false)}><Suspense fallback={<p role="status">Cargando visor PDF…</p>}><PdfPreview pdf={canonical} position={preparation.position} onReviewedPage={() => setPreviewReady(true)} onUnavailable={() => setPreviewReady(false)}/></Suspense></PreviewBoundary>)}
+          {preview ?? (canonical && <PreviewBoundary key={state.intentId} onUnavailable={() => setPreviewReady(false)}><Suspense fallback={<p role="status">Cargando visor PDF…</p>}><PdfPreview pdf={canonical} position={state.position??preparation.position} onReviewedPage={() => setPreviewReady(true)} onUnavailable={() => setPreviewReady(false)}/></Suspense></PreviewBoundary>)}
           <a className="ls-v2-download" href={url} download={state.filename} onClick={() => setDownloaded(true)}>Descargar documento PDF <span aria-hidden="true">↓</span></a>
         </div>
         <div className="ls-v2-actions">

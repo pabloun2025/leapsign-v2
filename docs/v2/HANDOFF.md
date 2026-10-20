@@ -14,7 +14,26 @@ V1 debe conservarse intacta en firma.veryfacil.org y repositorio firmador.
 No basta este checkout para completar la separación: falta crear un entorno
 Codex nuevo que monte solo este repositorio y solo credenciales de v2.
 
-## Lo que realmente funciona y lo que falta
+## Estado funcional verificado (20 octubre 2026)
+
+El recorrido v2 ya está implementado localmente: sesión Supabase intercambiada
+por cookie HTTP-only, creación y canonicalización privada, turnos secuenciales,
+motor P12/PFX en Web Worker con sello QR, recepción del PDF, validación Python,
+versiones inmutables, CAS atómico y recibos recuperables. La composición del
+Worker está limitada al dominio y proyecto v2 y las banderas siguen apagadas.
+
+Verificación actual: 269 pruebas TypeScript, build de producción, 140 aserciones
+SQL en PostgreSQL WASM, 64 pruebas Python base y 8 comprobaciones Chromium del
+motor de producto (tres firmas consecutivas, contraseña errónea, sujeto visible
+y QR leído del PDF renderizado). La concurrencia SQL con conexiones PostgreSQL
+independientes y la interoperabilidad con un certificado real siguen pendientes.
+
+No está desplegado todavía el flujo completo: falta aplicar únicamente la
+migración 003 al backend v2 y disponer de una URL HTTPS privada para el validador
+Python con su token compartido. No publicar el Worker con las banderas activas
+hasta que ambas dependencias estén disponibles.
+
+## Historia anterior
 
 Hay UI aislada con PDF.js, coordinador, contratos HTTP, handlers de preparación,
 adaptadores privados Auth/SQL/Storage, intenciones con caducidad y nonce hash,

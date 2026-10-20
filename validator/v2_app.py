@@ -34,8 +34,7 @@ async def health():
     return {"enabled": enabled(), "policy": "leapsign-v2-strict-offline-1"}
 
 
-@app.post("/validate")
-async def validate(request: Request):
+async def run_private_worker(request: Request, *, operation=None, output_limit=65536):
     authorize(request)
     if request.headers.get("content-type", "").split(";")[0] != "application/json":
         raise HTTPException(415, "JSON_REQUIRED")
@@ -53,13 +52,22 @@ async def validate(request: Request):
                     if len(content) + len(part) > MAX_REQUEST:
                         raise HTTPException(413, "REQUEST_TOO_LARGE")
                     content.extend(part)
+            if operation:
+                try:
+                    payload = json.loads(content)
+                    if not isinstance(payload, dict):
+                        payload = {"invalid": True}
+                except Exception:
+                    payload = {"invalid": True}
+                payload["operation"] = operation
+                content = bytearray(json.dumps(payload).encode())
             # Pass only public trust configuration to the child, not API keys.
             environment = {"V2_TRUST_POLICY_FILE": os.environ["V2_TRUST_POLICY_FILE"], "PYTHONPATH": str(Path(__file__).resolve().parent.parent)}
             process = await asyncio.create_subprocess_exec(sys.executable, "-m", "validator.v2_worker",
                 stdin=asyncio.subprocess.PIPE, stdout=asyncio.subprocess.PIPE,
                 stderr=asyncio.subprocess.DEVNULL, env=environment, cwd=Path(__file__).resolve().parent.parent)
             output, _ = await asyncio.wait_for(process.communicate(content), timeout=20)
-            if process.returncode or len(output) > 65536:
+            if process.returncode or len(output) > output_limit:
                 raise HTTPException(503, "VALIDATION_UNAVAILABLE")
             result = json.loads(output)
             # Known normalized failures only; nothing from a client crypto report.
@@ -75,3 +83,15 @@ async def validate(request: Request):
             if process and process.returncode is None:
                 process.kill()
                 await process.wait()
+
+
+@app.post("/validate")
+async def validate(request: Request):
+    return await run_private_worker(request)
+
+
+@app.post("/prepare")
+async def prepare(request: Request):
+    # A 10 MiB PDF expands to less than 14 MiB as base64. Keep the response
+    # bounded independently from validation's small JSON report.
+    return await run_private_worker(request, operation="prepare", output_limit=15 * 1024 * 1024)

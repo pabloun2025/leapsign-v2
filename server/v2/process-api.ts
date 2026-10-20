@@ -13,6 +13,12 @@ export interface ProcessDependencies{
 const security={'Cache-Control':'no-store','Referrer-Policy':'no-referrer','X-Content-Type-Options':'nosniff'};
 const json=(value:unknown,status=200)=>new Response(JSON.stringify(value),{status,headers:{...security,'Content-Type':'application/json'}});
 const uuid=(value:string)=>/^[a-f0-9]{8}-(?:[a-f0-9]{4}-){3}[a-f0-9]{12}$/i.test(value);
+const record=(value:unknown):value is Record<string,unknown>=>!!value&&typeof value==='object'&&!Array.isArray(value);
+const exact=(value:Record<string,unknown>,keys:string[])=>Object.keys(value).sort().join(',')===[...keys].sort().join(',');
+const filename=(value:unknown):value is string=>typeof value==='string'&&/^[^\r\n/\\]{1,124}\.pdf$/i.test(value);
+const statuses=['ready_for_signer','final_review','completed','failed'];
+function publicProcess(value:unknown):PublicProcess{if(!record(value)||!exact(value,['id','filename','status','signerCount'])||typeof value.id!=='string'||!uuid(value.id)||!filename(value.filename)||!statuses.includes(String(value.status))||!Number.isInteger(value.signerCount)||Number(value.signerCount)<1||Number(value.signerCount)>20)throw Error();return value as PublicProcess;}
+function processStatus(value:unknown):ProcessStatus{if(!record(value)||!exact(value,['id','filename','status','signatureCount','stages'])||typeof value.id!=='string'||!uuid(value.id)||!filename(value.filename)||!statuses.includes(String(value.status))||!Number.isInteger(value.signatureCount)||Number(value.signatureCount)<0||Number(value.signatureCount)>20||!Array.isArray(value.stages)||value.stages.length<1||value.stages.length>20)throw Error();if(!value.stages.every((stage,index)=>record(stage)&&exact(stage,['ordinal','status','current'])&&stage.ordinal===index+1&&['ready_for_signer','validated'].includes(String(stage.status))&&typeof stage.current==='boolean')||value.stages.filter(stage=>record(stage)&&stage.current===true).length>1)throw Error();return value as ProcessStatus;}
 async function pdfBody(request:Request){
  if(request.headers.get('Content-Type')?.split(';')[0].trim().toLowerCase()!=='application/pdf'||!request.body)throw Error();
  const reader=request.body.getReader();const chunks:Uint8Array[]=[];let size=0;const signal=AbortSignal.any([request.signal,AbortSignal.timeout(15_000)]);let abort!:()=>void;
@@ -35,9 +41,9 @@ export function createProcessHandler(deps:ProcessDependencies){
   if(!creating&&!(match&&request.method==='GET'))return json({code:'NOT_FOUND'},404);
   if(request.headers.get('X-LeapSign-Client')!=='v2'||(creating&&(request.headers.get('Origin')!==origin||(request.headers.has('Sec-Fetch-Site')&&request.headers.get('Sec-Fetch-Site')!=='same-origin'))))return json({code:'FORBIDDEN'},403);
   try{const actor=await deps.authenticate(request);if(!actor)return json({code:'UNAUTHENTICATED'},401);
-   if(creating){await deps.reserve(actor,'create');const meta=metadata(request);const pdf=await pdfBody(request);return json(await deps.create({ownerId:actor,...meta,pdf}),201);}
+   if(creating){await deps.reserve(actor,'create');const meta=metadata(request);const pdf=await pdfBody(request);return json(publicProcess(await deps.create({ownerId:actor,...meta,pdf})),201);}
    const id=match![1];if(!uuid(id))throw Error();if(match![2]){await deps.reserve(actor,'download');const value=await deps.download(id,actor);if(!/^[^\r\n/\\]{1,124}\.pdf$/i.test(value.filename)||!(value.pdf instanceof Uint8Array)||value.pdf.length>MAX_PDF_BYTES)throw Error();return new Response(new Uint8Array(value.pdf),{headers:{...security,'Content-Type':'application/pdf','Content-Disposition':`attachment; filename*=UTF-8''${encodeURIComponent(value.filename)}`}});}
-   await deps.reserve(actor,'status');return json(await deps.status(id,actor));
+   await deps.reserve(actor,'status');return json(processStatus(await deps.status(id,actor)));
   }catch{return json({code:'NOT_FOUND'},404);}
  };
 }

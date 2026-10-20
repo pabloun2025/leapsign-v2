@@ -6,6 +6,7 @@ by the operator, never by the browser or by arbitrary AIA URLs in a certificate.
 from datetime import datetime, timezone
 from hashlib import sha256
 from io import BytesIO
+from math import isfinite
 from asn1crypto import crl, ocsp, x509
 from pyhanko.pdf_utils.reader import PdfFileReader
 from pyhanko.pdf_utils.incremental_writer import IncrementalPdfFileWriter
@@ -97,6 +98,43 @@ def prepare_canonical(pdf: bytes) -> bytes:
         if len(output.getvalue()) > MAX_BYTES:
             raise ValidationFailure("DOCUMENT_MISMATCH")
         return output.getvalue()
+    except ValidationFailure:
+        raise
+    except Exception:
+        raise ValidationFailure("CANONICAL_PREPARATION_REQUIRED") from None
+
+
+def prepare_document(pdf: bytes) -> dict:
+    """Return canonical bytes and server-derived signing geometry.
+
+    This is an owner-upload boundary, not a signature validation result.  It
+    rejects active/encrypted/overly complex PDFs through ``prepare_canonical``
+    and never trusts page metadata supplied by the browser.
+    """
+    canonical = prepare_canonical(pdf)
+    try:
+        reader = PdfFileReader(BytesIO(canonical), strict=True)
+        page_count = int(reader.root["/Pages"]["/Count"])
+        if not 1 <= page_count <= 500:
+            raise ValidationFailure("PDF_COMPLEXITY_LIMIT")
+        page_ref, _ = reader.find_page_for_modification(page_count - 1)
+        page = page_ref.get_object()
+        inherited = page
+        while "/MediaBox" not in inherited:
+            inherited = inherited["/Parent"]
+        box = [float(item) for item in inherited["/MediaBox"]]
+        if len(box) != 4:
+            raise ValidationFailure("CANONICAL_PREPARATION_REQUIRED")
+        width, height = abs(box[2] - box[0]), abs(box[3] - box[1])
+        if not all(isfinite(item) and 0 < item <= 14400 for item in (width, height)):
+            raise ValidationFailure("CANONICAL_PREPARATION_REQUIRED")
+        signatures = len(reader.embedded_regular_signatures)
+        if not 0 <= signatures <= 20:
+            raise ValidationFailure("PDF_COMPLEXITY_LIMIT")
+        return {"pdf": canonical, "sha256": sha256(canonical).hexdigest(),
+                "byteSize": len(canonical), "pageCount": page_count,
+                "lastPageWidth": width, "lastPageHeight": height,
+                "signatureCount": signatures}
     except ValidationFailure:
         raise
     except Exception:

@@ -34,7 +34,9 @@ try {
   });
   await new Promise(resolve => server.listen(0, '127.0.0.1', resolve));
   const origin = `http://127.0.0.1:${server.address().port}`;
-  const {chromium} = await import(pathToFileURL(process.env.PLAYWRIGHT_MODULE_PATH).href);
+  const playwright = await import(pathToFileURL(process.env.PLAYWRIGHT_MODULE_PATH).href);
+  const chromium = playwright.chromium ?? playwright.default?.chromium;
+  if (!chromium) throw new Error('PLAYWRIGHT_CHROMIUM_UNAVAILABLE');
   browser = await chromium.launch({headless: true, executablePath: '/usr/bin/chromium', args: ['--no-sandbox']});
   const context = await browser.newContext({serviceWorkers: 'block'});
   await context.route('**/*', route => {
@@ -49,22 +51,39 @@ try {
   const result = await page.evaluate(async payload => {
     const worker = new Worker('/worker.js', {type: 'module'});
     const decode = value => Uint8Array.from(atob(value), letter => letter.charCodeAt(0));
-    payload.p12 = decode(payload.p12); payload.pdf = decode(payload.pdf);
+    const certificate = decode(payload.p12);
+    const pdf = decode(payload.pdf);
+    const suffix = String(payload.number ?? 1).padStart(12, '0');
+    const intentId = `00000000-0000-4000-8000-${suffix}`;
+    let request = {
+      intent: {
+        id: intentId, documentId: 'synthetic-document', versionId: 'synthetic-version',
+        stageId: 'synthetic-stage', signerId: 'synthetic-person', role: 'approval',
+        profile: 'firmaec-qr-compatible', position: {
+          page: 2, x: 320, y: 20 + 90 * ((payload.number ?? 1) - 1), width: 250, height: 80,
+        },
+        issuedAt: '2026-10-20T00:00:00.000Z', expiresAt: '2099-10-20T00:05:00.000Z',
+        nonce: 'synthetic-only', state: 'signature_intent_issued',
+        correlationId: 'synthetic-correlation', baseSha256: '0'.repeat(64),
+      },
+      pdf: pdf.buffer, certificate: certificate.buffer, password: payload.password,
+      reason: 'Synthetic browser interoperability probe', location: 'Local laboratory',
+    };
     return new Promise(resolve => {
       const timeout = setTimeout(() => {worker.terminate(); resolve({ok: false, error: 'LOCAL_ENGINE_REJECTED'});}, 20_000);
       const finish = result => {clearTimeout(timeout); worker.terminate(); resolve(result);};
       worker.onerror = event => {event.preventDefault(); finish({ok: false, error: 'LOCAL_ENGINE_REJECTED'});};
       worker.onmessage = event => {
         const result = event.data;
-        if (result.ok && result.pdf instanceof ArrayBuffer) {
+        if (result?.type === 'signed' && result.intentId === intentId && result.pdf instanceof ArrayBuffer) {
           const bytes = new Uint8Array(result.pdf);
           let binary = '';
           for (let offset = 0; offset < bytes.length; offset += 32768) binary += String.fromCharCode(...bytes.subarray(offset, offset + 32768));
           finish({ok: true, pdf: btoa(binary)});
         } else finish({ok: false, error: 'LOCAL_ENGINE_REJECTED'});
       };
-      worker.postMessage(payload, [payload.pdf.buffer, payload.p12.buffer]);
-      payload.password = ''; payload = null;
+      worker.postMessage(request, [request.pdf, request.certificate]);
+      payload.password = ''; payload = null; request = null;
     });
   }, input);
   const persisted = await page.evaluate(() => localStorage.length + sessionStorage.length);

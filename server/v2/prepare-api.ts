@@ -65,7 +65,11 @@ export function createPreparationHandler(deps: PreparationDependencies) {
         const stage = await deps.loadStage(input.documentId,actor);
         if (stage.documentId !== input.documentId) throw Error();
         if (!Number.isInteger(stage.previousSignatureCount) || stage.previousSignatureCount < 0 || stage.previousSignatureCount > 19 || !/^[^\r\n/\\]{1,124}\.pdf$/i.test(stage.filename)) throw Error();
-        const intent = issueIntent(stage,actor,input.profile,input.position,deps.now?.());
+        const width=Math.min(250,stage.pageWidth-20),height=Math.min(82,stage.pageHeight-20);
+        const position=input.position.page===0
+          ? {page:stage.pageCount,x:Math.max(0,stage.pageWidth-width-20),y:20,width,height}
+          : input.position;
+        const intent = issueIntent(stage,actor,input.profile,position,deps.now?.());
         if (!isPublicSigningIntent(intent)) throw Error();
         checkPdf(await deps.loadCanonical(stage.versionId,actor),intent.baseSha256);
         if (request.signal.aborted) throw Error();

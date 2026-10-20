@@ -1,9 +1,10 @@
 import {defineConfig} from 'vite';
 import {fileURLToPath} from 'node:url';
+import {libPdfVisibleSignaturePlugin} from '../../src/v2/local-engine/libpdf-visible-plugin';
 
-/** Static UI demonstration ONLY. Never inherit v1's environment or entrypoint. */
+/** Dedicated v2 functional UI. Never inherit v1's environment or entrypoint. */
 export default defineConfig({
-  root: fileURLToPath(new URL('../lab/ui/', import.meta.url)),
+  root: fileURLToPath(new URL('./ui/', import.meta.url)),
   envDir: false,
   envPrefix: 'LEAPSIGN_PREVIEW_PUBLIC_',
   publicDir: false,
@@ -13,7 +14,7 @@ export default defineConfig({
     sourcemap: false,
     target: 'es2022',
   },
-  plugins: [{
+  plugins: [libPdfVisibleSignaturePlugin(), {
     name: 'preview-source-and-robots',
     transformIndexHtml(html) {
       return html.replace('</head>', '<meta name="robots" content="noindex,nofollow,noarchive"></head>')

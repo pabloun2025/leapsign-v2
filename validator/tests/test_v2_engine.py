@@ -13,7 +13,7 @@ from pyhanko.pdf_utils import generic
 from pyhanko.sign import fields, signers
 from pyhanko_certvalidator.registry import SimpleCertificateStore
 from reportlab.pdfgen import canvas
-from validator.v2_engine import validate_pair, prepare_canonical, ValidationFailure
+from validator.v2_engine import validate_pair, prepare_canonical, prepare_document, ValidationFailure
 
 
 @pytest.fixture(scope="module", params=["EC", "ES"])
@@ -156,6 +156,17 @@ def test_first_signature_cannot_replace_page_content(sample):
 def test_canonical_preparation_never_rewrites_signed_pdf(sample):
     assert prepare_canonical(sample["first"]) == sample["first"]
     assert prepare_canonical(sample["base"]) == sample["base"]
+
+
+def test_canonical_document_metadata_is_derived_server_side(sample):
+    result = prepare_document(sample["base"])
+    assert result["pdf"] == sample["base"]
+    assert result["sha256"] == sha256(sample["base"]).hexdigest()
+    assert result["byteSize"] == len(sample["base"])
+    assert result["pageCount"] == 2
+    assert result["lastPageWidth"] == pytest.approx(595, abs=0.01)
+    assert result["lastPageHeight"] == pytest.approx(842, abs=0.01)
+    assert result["signatureCount"] == 0
 
 
 def active_pdf(sample, *, orphan=False, compressed=False):

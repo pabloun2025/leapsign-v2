@@ -1,6 +1,7 @@
 {
   "name": "leapsign-v2-ui-preview",
   "compatibility_date": "2026-10-19",
+  "compatibility_flags": ["nodejs_compat"],
   "main": "./src/worker.ts",
   "workers_dev": true,
   "preview_urls": false,
@@ -12,5 +13,13 @@
     "binding": "ASSETS",
     "not_found_handling": "none"
   },
-  "observability": { "enabled": false }
+  "observability": { "enabled": false },
+  "vars": {
+    "V2_ORIGIN": "https://pruebas.leapsign.app",
+    "SUPABASE_V2_URL": "https://lbreydchhskrrmpzniem.supabase.co",
+    "V2_STORAGE_BUCKET": "v2-pdfs",
+    "V2_DIRECT_ENABLED": "false",
+    "V2_EXTERNAL_ENABLED": "false",
+    "V2_PROFILE_ENABLED": "false"
+  }
 }

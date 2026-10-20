@@ -12,9 +12,11 @@
     "build:preview-package": "node scripts/build-v2-preview.mjs"
   },
   "dependencies": {
+    "@libpdf/core": "0.5.3",
     "@supabase/supabase-js": "^2.117.3",
     "@vitejs/plugin-react": "latest",
     "pdfjs-dist": "6.4.299",
+    "qrcode": "1.5.4",
     "react": "latest",
     "react-dom": "latest",
     "vite": "latest"

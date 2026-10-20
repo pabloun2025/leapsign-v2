@@ -75,3 +75,34 @@ def test_profile_flag_required_even_when_direct_mode_is_enabled(monkeypatch):
     monkeypatch.setenv("V2_TRUST_POLICY_FILE", "/nonexistent/test-policy.json")
     with TestClient(app) as client:
         assert client.post("/validate", json={}, headers={"Authorization": "Bearer " + "x" * 32}).status_code == 503
+
+
+def test_private_prepare_returns_bounded_canonical_pdf(sample, monkeypatch, tmp_path):
+    policy = tmp_path / "policy.json"
+    policy.write_text(json.dumps({"version": 1, "trust_roots": [], "crls": []}))
+    monkeypatch.setenv("DIRECT_P12_SIGNING_ENABLED", "true")
+    monkeypatch.setenv("FIRMAEC_COMPATIBILITY_PROFILE_ENABLED", "true")
+    monkeypatch.setenv("V2_VALIDATOR_TOKEN", "x" * 32)
+    monkeypatch.setenv("V2_TRUST_POLICY_FILE", str(policy))
+    with TestClient(app) as client:
+        result = client.post("/prepare", json={"pdf": base64.b64encode(sample["base"]).decode()}, headers={"Authorization": "Bearer " + "x" * 32})
+        assert result.status_code == 200
+        body = result.json()
+        assert set(body) == {"pdf", "sha256", "byteSize", "pageCount", "lastPageWidth", "lastPageHeight", "signatureCount"}
+        prepared = base64.b64decode(body["pdf"], validate=True)
+        assert prepared == sample["base"]
+        assert body["sha256"] == sha256(prepared).hexdigest()
+        assert body["pageCount"] == 2
+
+
+def test_private_prepare_rejects_certificate_and_password_fields(monkeypatch, tmp_path):
+    policy = tmp_path / "policy.json"
+    policy.write_text(json.dumps({"version": 1, "trust_roots": [], "crls": []}))
+    monkeypatch.setenv("DIRECT_P12_SIGNING_ENABLED", "true")
+    monkeypatch.setenv("FIRMAEC_COMPATIBILITY_PROFILE_ENABLED", "true")
+    monkeypatch.setenv("V2_VALIDATOR_TOKEN", "x" * 32)
+    monkeypatch.setenv("V2_TRUST_POLICY_FILE", str(policy))
+    with TestClient(app) as client:
+        result = client.post("/prepare", json={"pdf": "JVBERi0=", "password": "never"}, headers={"Authorization": "Bearer " + "x" * 32})
+        assert result.json() == {"valid": False, "error": "INVALID_REQUEST"}
+        assert "never" not in result.text

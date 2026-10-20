@@ -9,12 +9,14 @@ describe('preview configuration cannot replace production', () => {
     expect(production.name).toBe('firmador'); expect(preview.name).toBe('leapsign-v2-ui-preview');
     expect(preview.routes).toEqual([{pattern:'pruebas.leapsign.app',custom_domain:true}]);
     expect(preview.main).toBe('./src/worker.ts');
-    expect(Object.keys(preview).sort()).toEqual(['assets','compatibility_date','main','name','observability','preview_urls','routes','workers_dev']);
+    expect(Object.keys(preview).sort()).toEqual(['assets','compatibility_date','compatibility_flags','main','name','observability','preview_urls','routes','vars','workers_dev']);
+    expect(preview.compatibility_flags).toEqual(['nodejs_compat']);
+    expect(preview.vars).toMatchObject({V2_ORIGIN:'https://pruebas.leapsign.app',SUPABASE_V2_URL:'https://lbreydchhskrrmpzniem.supabase.co',V2_STORAGE_BUCKET:'v2-pdfs'});
     expect(resolve(root, 'v2/preview', preview.assets.directory)).not.toBe(resolve(root, production.assets.directory));
   });
   it('prevents API connections, embedding and native form submissions in static preview', () => {
     const headers = readFileSync(resolve(root, 'v2/preview/_headers'), 'utf8');
-    for (const directive of ["connect-src 'none'", "object-src 'none'", "frame-src 'none'", "form-action 'none'", "worker-src 'self'", 'X-Robots-Tag: noindex']) expect(headers).toContain(directive);
+    for (const directive of ["connect-src 'self' https://lbreydchhskrrmpzniem.supabase.co", "object-src 'none'", "frame-src 'none'", "form-action 'none'", "worker-src 'self'", 'X-Robots-Tag: noindex']) expect(headers).toContain(directive);
     expect(headers).not.toContain("'unsafe-eval'");
   });
 });

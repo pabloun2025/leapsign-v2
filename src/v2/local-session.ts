@@ -1,5 +1,6 @@
 import type {SigningIntent} from './contracts';
 import {MAX_CERTIFICATE_BYTES, MAX_PDF_BYTES} from './policy';
+import {createLocalEngineWorker} from './local-engine/client';
 
 /** Browser-only boundary. Never pass this request to fetch, storage or logging.
  * A dedicated worker must be created per operation, with no network access.
@@ -13,7 +14,7 @@ export interface SigningWorkerPort {
   terminate(): void;
   onmessage: ((event: MessageEvent<unknown>) => void) | null;
   onerror: ((event: ErrorEvent) => void) | null;
-  onmessageerror: (() => void) | null;
+  onmessageerror: ((event: MessageEvent<unknown>) => void) | null;
 }
 export type LocalSessionOptions = {
   createWorker: () => SigningWorkerPort;
@@ -96,4 +97,10 @@ export async function runLocalSigningSession(
     try { worker.postMessage(request, [request.pdf, request.certificate]); }
     catch { fail('LOCAL_FAILURE'); }
   });
+}
+
+/** Product-facing LocalSigner. Certificate and password only cross this
+ * in-browser transfer boundary and are never accepted by an HTTP adapter. */
+export function signWithLocalEngine(request: LocalWorkerRequest, signal: AbortSignal) {
+  return runLocalSigningSession(request, {createWorker: createLocalEngineWorker, signal});
 }

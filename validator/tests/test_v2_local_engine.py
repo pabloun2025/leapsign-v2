@@ -19,6 +19,7 @@ from validator.tests.test_v2_engine import sample, validate
 from validator.v2_engine import ValidationFailure
 from PIL import Image
 from pyhanko.pdf_utils.incremental_writer import IncrementalPdfFileWriter
+from pyhanko.pdf_utils.reader import PdfFileReader
 from pyhanko.pdf_utils import generic
 
 pytestmark = pytest.mark.skipif(not os.environ.get("LIBPDF_MODULE_PATH"), reason="Local browser-engine laboratory is not configured")
@@ -96,11 +97,15 @@ def test_local_visible_three_incremental_signatures(sample):
         previous = candidate
 
 
+browser_lab = pytest.mark.skipif(not all(os.environ.get(name) for name in ("BROWSER_WORKER_LAB_PATH", "PLAYWRIGHT_MODULE_PATH")), reason="Chromium signing laboratory is not configured")
+
+
+@browser_lab
 @pytest.mark.skipif(not all(os.environ.get(name) for name in ("LIBPDF_VISIBLE_LAB", "QRCODE_MODULE_PATH", "JSQR_MODULE_PATH")), reason="Visible QR rendering/decoding laboratory is not configured")
 def test_visible_qr_decodes_from_actual_signed_pdf(sample):
     audit_id = "urn:leapsign:signature:00000000-0000-4000-8000-000000000001"
     p12, _ = container(sample)
-    candidate = local_sign(sample["base"], p12, visible=True, qr=audit_id)
+    candidate = local_sign(sample["base"], p12, visible=True, qr=audit_id, use_browser=True)
     assert candidate is not None
     assert validate(sample, candidate=candidate, position={"page": 2, "x": 320, "y": 20, "width": 250, "height": 80})["valid"]
     # Render the actual annotation from the signed PDF, not the QR source matrix.
@@ -115,7 +120,14 @@ def test_visible_qr_decodes_from_actual_signed_pdf(sample):
     assert json.loads(decoded.stdout) == {"data": audit_id}
 
 
-browser_lab = pytest.mark.skipif(not all(os.environ.get(name) for name in ("BROWSER_WORKER_LAB_PATH", "PLAYWRIGHT_MODULE_PATH")), reason="Chromium signing laboratory is not configured")
+@browser_lab
+def test_chromium_worker_uses_subject_from_synthetic_certificate(sample):
+    p12, _ = container(sample)
+    candidate = local_sign(sample["base"], p12, visible=True, use_browser=True)
+    assert candidate is not None
+    reader = PdfFileReader(BytesIO(candidate), strict=True)
+    appearance = reader.embedded_regular_signatures[-1].sig_field["/AP"]["/N"].get_object().data
+    assert b"PERSONA DE PRUEBA" in appearance
 
 
 @browser_lab
