@@ -7,6 +7,44 @@ import pytest
 from hashlib import sha256
 
 
+def write_test_policy(path, root, crl):
+    (path / "root.der").write_bytes(root)
+    (path / "revocations.der").write_bytes(crl)
+    source = {
+        "repository": "https://example.invalid/test-only",
+        "commit": "0" * 40,
+        "originalPath": "synthetic-test-fixture.java",
+        "commitDate": "2026-01-01T00:00:00+00:00",
+        "license": "test-only",
+    }
+    entry = lambda file, data: {
+        "file": file,
+        "sha256": sha256(data).hexdigest(),
+        "incorporatedAt": "2026-01-01T00:00:00+00:00",
+        "source": source,
+    }
+    manifest = path / "policy.json"
+    manifest.write_text(json.dumps({
+        "version": 2,
+        "id": "leapsign-v2-synthetic-test-only",
+        "incorporatedAt": "2026-01-01T00:00:00+00:00",
+        "legalOutcome": "not_determined_by_software",
+        "acceptance": {
+            "cryptographicIntegrity": "required",
+            "chainTrust": "required",
+            "certificateValidity": "required_at_server_receipt",
+            "revocation": "verified_good_required",
+        },
+        "authorities": [{
+            "id": "synthetic-test-only", "name": "Synthetic test CA",
+            "compatibility": "test_only", "revocationHosts": [],
+            "trustAnchors": [entry("root.der", root)], "intermediates": [],
+            "revocation": [entry("revocations.der", crl)],
+        }],
+    }))
+    return manifest
+
+
 def test_disabled_by_default(monkeypatch):
     monkeypatch.delenv("EXTERNAL_SIGNATURE_ENABLED", raising=False)
     monkeypatch.delenv("DIRECT_P12_SIGNING_ENABLED", raising=False)
@@ -49,10 +87,7 @@ def test_certificate_or_password_fields_are_rejected(monkeypatch):
 @pytest.mark.parametrize("method", ["external", "direct"])
 def test_real_http_worker_validation(sample, monkeypatch, tmp_path, method):
     # Only public trust material is written; all fixture private keys stay in memory.
-    (tmp_path / "root.der").write_bytes(sample["roots"][0])
-    (tmp_path / "revocations.der").write_bytes(sample["crl"]())
-    manifest = tmp_path / "policy.json"
-    manifest.write_text(json.dumps({"version": 1, "trust_roots": ["root.der"], "crls": ["revocations.der"]}))
+    manifest = write_test_policy(tmp_path, sample["roots"][0], sample["crl"]())
     monkeypatch.setenv("EXTERNAL_SIGNATURE_ENABLED", "true" if method == "external" else "false")
     monkeypatch.setenv("DIRECT_P12_SIGNING_ENABLED", "true" if method == "direct" else "false")
     monkeypatch.setenv("FIRMAEC_COMPATIBILITY_PROFILE_ENABLED", "true")
@@ -78,8 +113,7 @@ def test_profile_flag_required_even_when_direct_mode_is_enabled(monkeypatch):
 
 
 def test_private_prepare_returns_bounded_canonical_pdf(sample, monkeypatch, tmp_path):
-    policy = tmp_path / "policy.json"
-    policy.write_text(json.dumps({"version": 1, "trust_roots": [], "crls": []}))
+    policy = write_test_policy(tmp_path, sample["roots"][0], sample["crl"]())
     monkeypatch.setenv("DIRECT_P12_SIGNING_ENABLED", "true")
     monkeypatch.setenv("FIRMAEC_COMPATIBILITY_PROFILE_ENABLED", "true")
     monkeypatch.setenv("V2_VALIDATOR_TOKEN", "x" * 32)
@@ -95,9 +129,8 @@ def test_private_prepare_returns_bounded_canonical_pdf(sample, monkeypatch, tmp_
         assert body["pageCount"] == 2
 
 
-def test_private_prepare_rejects_certificate_and_password_fields(monkeypatch, tmp_path):
-    policy = tmp_path / "policy.json"
-    policy.write_text(json.dumps({"version": 1, "trust_roots": [], "crls": []}))
+def test_private_prepare_rejects_certificate_and_password_fields(sample, monkeypatch, tmp_path):
+    policy = write_test_policy(tmp_path, sample["roots"][0], sample["crl"]())
     monkeypatch.setenv("DIRECT_P12_SIGNING_ENABLED", "true")
     monkeypatch.setenv("FIRMAEC_COMPATIBILITY_PROFILE_ENABLED", "true")
     monkeypatch.setenv("V2_VALIDATOR_TOKEN", "x" * 32)
@@ -106,3 +139,26 @@ def test_private_prepare_rejects_certificate_and_password_fields(monkeypatch, tm
         result = client.post("/prepare", json={"pdf": "JVBERi0=", "password": "never"}, headers={"Authorization": "Bearer " + "x" * 32})
         assert result.json() == {"valid": False, "error": "INVALID_REQUEST"}
         assert "never" not in result.text
+
+
+def test_ready_fails_closed_when_policy_is_missing(monkeypatch):
+    monkeypatch.setenv("V2_TRUST_POLICY_FILE", "/nonexistent/policy.json")
+    with TestClient(app) as client:
+        response = client.get("/ready")
+        assert response.status_code == 503
+        assert response.json() == {"detail": "VALIDATOR_NOT_READY"}
+
+
+def test_ready_verifies_policy_hashes(sample, monkeypatch, tmp_path):
+    policy = write_test_policy(tmp_path, sample["roots"][0], sample["crl"]())
+    monkeypatch.setenv("V2_TRUST_POLICY_FILE", str(policy))
+    with TestClient(app) as client:
+        assert client.get("/ready").json() == {
+            "ready": True,
+            "policy": "leapsign-v2-synthetic-test-only",
+            "authorities": ["synthetic-test-only"],
+        }
+        (tmp_path / "root.der").write_bytes(b"changed")
+        response = client.get("/ready")
+        assert response.status_code == 503
+        assert response.json() == {"detail": "VALIDATOR_NOT_READY"}

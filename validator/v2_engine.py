@@ -143,6 +143,7 @@ def prepare_document(pdf: bytes) -> dict:
 
 def validate_pair(previous: bytes, candidate: bytes, *, base_sha256: str,
                   trust_roots: list[bytes], crls: list[bytes], ocsps: list[bytes] | None = None,
+                  intermediates: list[bytes] | None = None,
                   expected_fingerprint: str | None = None, position: dict | None = None) -> dict:
     """No positive result without independent CMS, trust, revocation and diff checks.
 

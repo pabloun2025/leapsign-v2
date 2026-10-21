@@ -11,6 +11,7 @@ import os
 from pathlib import Path
 import sys
 from fastapi import FastAPI, HTTPException, Request
+from validator.v2_policy import load_policy, PolicyFailure
 
 MAX_REQUEST = 29 * 1024 * 1024
 app = FastAPI(docs_url=None, redoc_url=None, openapi_url=None)
@@ -32,6 +33,15 @@ def authorize(request):
 @app.get("/health")
 async def health():
     return {"enabled": enabled(), "policy": "leapsign-v2-strict-offline-1"}
+
+
+@app.get("/ready")
+async def ready():
+    try:
+        loaded = load_policy(os.environ["V2_TRUST_POLICY_FILE"])
+        return {"ready": True, "policy": loaded["id"], "authorities": loaded["authorities"]}
+    except (KeyError, PolicyFailure):
+        raise HTTPException(503, "VALIDATOR_NOT_READY") from None
 
 
 async def run_private_worker(request: Request, *, operation=None, output_limit=65536):

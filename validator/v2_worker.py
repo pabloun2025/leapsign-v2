@@ -2,7 +2,6 @@
 import base64
 import json
 import os
-from pathlib import Path
 import resource
 import sys
 
@@ -10,30 +9,15 @@ resource.setrlimit(resource.RLIMIT_AS, (512 * 1024 * 1024, 512 * 1024 * 1024))
 resource.setrlimit(resource.RLIMIT_CPU, (15, 15))
 
 from validator.v2_engine import prepare_document, validate_pair, ValidationFailure
+from validator.v2_policy import load_policy, PolicyFailure
 
 
 def policy():
-    manifest = Path(os.environ["V2_TRUST_POLICY_FILE"])
-    if manifest.stat().st_size > 65536:
-        raise ValidationFailure("TRUST_POLICY_REQUIRED")
-    config = json.loads(manifest.read_bytes())
-    if config.get("version") != 1:
-        raise ValidationFailure("TRUST_POLICY_REQUIRED")
-    result = {}
-    for key in ("trust_roots", "crls", "ocsps"):
-        names = config.get(key, [])
-        if not isinstance(names, list) or len(names) > 16:
-            raise ValidationFailure("TRUST_POLICY_REQUIRED")
-        values = []
-        for name in names:
-            if not isinstance(name, str) or Path(name).name != name or name in (".", ".."):
-                raise ValidationFailure("TRUST_POLICY_REQUIRED")
-            file = manifest.parent / name
-            if file.is_symlink() or not 0 < file.stat().st_size <= 2 * 1024 * 1024:
-                raise ValidationFailure("TRUST_POLICY_REQUIRED")
-            values.append(file.read_bytes())
-        result[key] = values
-    return result
+    try:
+        loaded = load_policy(os.environ["V2_TRUST_POLICY_FILE"])
+        return {key: loaded[key] for key in ("trust_roots", "intermediates", "crls", "ocsps")}
+    except (KeyError, PolicyFailure):
+        raise ValidationFailure("TRUST_POLICY_REQUIRED") from None
 
 
 def run():
