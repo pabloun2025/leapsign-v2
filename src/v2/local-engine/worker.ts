@@ -7,10 +7,19 @@ type LocalWorkerScope = {
   postMessage(value: unknown, transfer: Transferable[]): void;
   close(): void;
   fetch: typeof fetch;
+  XMLHttpRequest: unknown;
+  WebSocket: unknown;
+  EventSource: unknown;
+  importScripts: unknown;
 };
 
 const scope = globalThis as unknown as LocalWorkerScope;
 scope.fetch = (() => { throw new Error('NETWORK_DISABLED'); }) as typeof fetch;
+const NetworkDisabled=class{constructor(){throw new Error('NETWORK_DISABLED');}};
+scope.XMLHttpRequest = NetworkDisabled;
+scope.WebSocket = NetworkDisabled;
+scope.EventSource = NetworkDisabled;
+scope.importScripts = () => {throw new Error('NETWORK_DISABLED');};
 let used = false;
 
 scope.onmessage = async event => {

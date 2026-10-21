@@ -20,6 +20,7 @@ export type ProcessStatus = {
 export type Receipt =
   | {state: 'validated'; report: SignatureValidationResult}
   | {state: 'signature_intent_issued' | 'signed_pending_validation' | 'rejected' | 'expired' | 'failed'};
+export type PublicVerification={processId:string;receiptId:string;signedSha256:string;signer:string;validatedAt:string;accepted:true;checks:SignatureValidationResult['checks'];revocation:'good';legalOutcome:'not_determined_by_software'};
 
 export class FunctionalClientError extends Error {
   constructor(readonly code: 'INVALID_INPUT' | 'UNAUTHENTICATED' | 'UNAVAILABLE' | 'INVALID_RESPONSE' | 'ABORTED') {
@@ -171,6 +172,11 @@ export class FunctionalV2Client {
     return processStatus(await this.json(await this.request(`/api/v2/processes/${id.toLowerCase()}`, {method: 'GET'}, signal)));
   }
 
+  async finalizeProcess(id:string,signal?:AbortSignal){
+    if(!isProcessId(id))throw new FunctionalClientError('INVALID_INPUT');
+    return processStatus(await this.json(await this.request(`/api/v2/processes/${id.toLowerCase()}/finalize`,{method:'POST'},signal)));
+  }
+
   processPdfUrl(id: string) {
     if (!isProcessId(id)) throw new FunctionalClientError('INVALID_INPUT');
     return `${this.options.origin}/api/v2/processes/${id.toLowerCase()}/pdf`;
@@ -179,5 +185,13 @@ export class FunctionalV2Client {
   async getReceipt(id: string, signal?: AbortSignal) {
     if (!isProcessId(id)) throw new FunctionalClientError('INVALID_INPUT');
     return receipt(await this.json(await this.request(`/api/v2/signing/intents/${id.toLowerCase()}/receipt`, {method: 'GET'}, signal)));
+  }
+  async getVerification(id:string,signal?:AbortSignal){
+    if(!isProcessId(id))throw new FunctionalClientError('INVALID_INPUT');
+    const value=await this.json(await this.request(`/api/v2/verifications/${id.toLowerCase()}`,{method:'GET'},signal));
+    const names=['cryptographicIntegrity','cmsSignature','documentMatch','oneNewSignature','previousSignatures','chainBuilt','trusted','certificateValidity','revocation'];
+    const checks=object(value)&&object(value.checks)?value.checks:undefined;
+    if(!object(value)||!exact(value,['processId','receiptId','signedSha256','signer','validatedAt','accepted','checks','revocation','legalOutcome'])||typeof value.processId!=='string'||!isProcessId(value.processId)||value.receiptId!==id.toLowerCase()||typeof value.signedSha256!=='string'||!/^[a-f0-9]{64}$/.test(value.signedSha256)||typeof value.signer!=='string'||typeof value.validatedAt!=='string'||!Number.isFinite(Date.parse(value.validatedAt))||value.accepted!==true||value.revocation!=='good'||value.legalOutcome!=='not_determined_by_software'||!checks||!exact(checks,names)||names.slice(0,-1).some(name=>checks[name]!=='passed')||checks.revocation!=='good')throw new FunctionalClientError('INVALID_RESPONSE');
+    return value as PublicVerification;
   }
 }

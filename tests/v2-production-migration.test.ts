@@ -25,3 +25,12 @@ describe('v2 explicit owner finalization migration',()=>{
     expect(sql).toContain('revoke all on function public.v2_finalize_process(uuid,uuid) from public,anon,authenticated,service_role');
   });
 });
+
+describe('v2 QR verification migration',()=>{
+  it('authorizes only the process owner or signer and keeps the RPC server-only',()=>{
+    const sql=readFileSync('v2/migrations/006_authenticated_verification.sql','utf8');
+    expect(sql).toContain('v2_get_verification');expect(sql).toContain('d.owner_id = p_actor_id');expect(sql).toContain('i.signer_id = p_actor_id');
+    expect(sql).toContain('grant execute on function public.v2_get_verification(uuid,uuid) to service_role');
+    expect(sql).toContain('revoke all on function public.v2_get_verification(uuid,uuid) from public,anon,authenticated,service_role');
+  });
+});

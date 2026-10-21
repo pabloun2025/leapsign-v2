@@ -3,6 +3,7 @@ import {createProcessHandler} from '../../../server/v2/process-api';
 import {createPreparationHandler} from '../../../server/v2/prepare-api';
 import {createSubmissionHandler} from '../../../server/v2/submit-api';
 import {createReceiptHandler} from '../../../server/v2/receipts-api';
+import {createVerificationHandler} from '../../../server/v2/verification-api';
 import {OfflineValidatorClient} from '../../../server/v2/private-validator';
 import {postgresSubmission} from '../../../server/v2/postgres-submission';
 import {supabasePrivate} from '../../../server/v2/supabase-private';
@@ -35,6 +36,7 @@ export default{async fetch(request:Request,env:Env):Promise<Response>{
    return createSubmissionHandler({origin:expectedOrigin,flags,authenticate,reserve:reserve as never,repository:submission,validator,loadCanonical:repositories.loadCanonical})(request);
   }
   if(/\/api\/v2\/signing\/intents\/[a-f0-9-]{36}\/receipt$/.test(url.pathname))return createReceiptHandler({origin:expectedOrigin,authenticate,reserve:reserve as never,load:repositories.receipt})(request);
+  if(/\/api\/v2\/verifications\/[a-f0-9-]{36}$/.test(url.pathname))return createVerificationHandler({origin:expectedOrigin,authenticate,reserve:reserve as never,load:repositories.verification})(request);
   if(url.pathname.startsWith('/api/v2/'))return json({code:'NOT_FOUND'},404);
   const asset=await env.ASSETS.fetch(request);if(asset.status!==404)return asset;
   return env.ASSETS.fetch(new Request(new URL('/',request.url),request));

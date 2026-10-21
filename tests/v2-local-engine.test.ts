@@ -45,12 +45,17 @@ describe('maintainable local signing engine', () => {
   it('builds a FirmaEC-style legend and a non-secret audit QR payload', async () => {
     const module = await import('../src/v2/local-engine/appearance');
     expect(module.firmaEcAppearanceText('PERSONA DE PRUEBA')).toEqual([
-      'Validar únicamente en FirmaEC.', 'Firmado electrónicamente por:', 'PERSONA DE PRUEBA',
+      'Verificar en LeapSign.', 'Firmado electrónicamente por:', 'PERSONA DE PRUEBA',
     ]);
     const payload = module.signatureQrPayload('00000000-0000-4000-8000-000000000001');
-    expect(payload).toBe('urn:leapsign:signature:00000000-0000-4000-8000-000000000001');
+    expect(payload).toBe('https://pruebas.leapsign.app/verificar/00000000-0000-4000-8000-000000000001');
     expect(payload).not.toContain('nonce');
     expect(() => module.firmaEcAppearanceText('ANA\nBT /F1 99 Tf')).toThrow('INVALID_SIGNER_NAME');
+  });
+
+  it('removes all browser network primitives from the dedicated signing worker', async()=>{
+    const source=await readFile(new URL('../src/v2/local-engine/worker.ts',import.meta.url),'utf8');
+    for(const primitive of ['fetch','XMLHttpRequest','WebSocket','EventSource','importScripts'])expect(source).toMatch(new RegExp(`scope\\.${primitive}\\s*=`));
   });
 
   it('pins the reviewed LibPDF artifact before enabling visible signatures', async () => {

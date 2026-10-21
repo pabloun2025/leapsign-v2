@@ -7,12 +7,12 @@ const safeIntentId = /^[a-zA-Z0-9_-]{1,128}$/;
 
 export function firmaEcAppearanceText(subject: string): [string, string, string] {
   if (!safeName.test(subject)) throw new Error('INVALID_SIGNER_NAME');
-  return ['Validar únicamente en FirmaEC.', 'Firmado electrónicamente por:', subject];
+  return ['Verificar en LeapSign.', 'Firmado electrónicamente por:', subject];
 }
 
 export function signatureQrPayload(intentId: string) {
   if (!safeIntentId.test(intentId)) throw new Error('INVALID_INTENT_ID');
-  return `urn:leapsign:signature:${intentId}`;
+  return `https://pruebas.leapsign.app/verificar/${intentId}`;
 }
 
 export function signatureFieldName(intentId: string) {

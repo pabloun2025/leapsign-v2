@@ -2,6 +2,7 @@ export type AppRoute =
   | {kind: 'owner'}
   | {kind: 'signer'; token: string}
   | {kind: 'tracking'; processId: string}
+  | {kind:'verification';receiptId:string}
   | {kind: 'recovery'}
   | {kind: 'not-found'};
 
@@ -21,6 +22,7 @@ export function parseAppRoute(pathname: string): AppRoute {
   if (parts.length === 2 && parts[0] === 'firmar' && signerTokenPattern.test(parts[1])) {
     return {kind: 'signer', token: parts[1]};
   }
+  if(parts.length===2&&parts[0]==='verificar'&&processIdPattern.test(parts[1]))return{kind:'verification',receiptId:parts[1].toLowerCase()};
   return {kind: 'not-found'};
 }
 export type SignerEmailValidation =

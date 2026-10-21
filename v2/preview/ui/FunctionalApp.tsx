@@ -115,8 +115,8 @@ function StagePill({stage}: {stage: ProcessStatus['stages'][number]}) {
   </li>;
 }
 
-export function ProcessProgress({client, status}: {client: FunctionalV2Client; status: ProcessStatus}) {
-  const complete = status.status === 'completed' || status.status === 'final_review';
+export function ProcessProgress({client, status,onFinalize}: {client: FunctionalV2Client; status: ProcessStatus;onFinalize?:()=>void}) {
+  const complete = status.status === 'completed';
   return <section className="progress-card" aria-labelledby="process-progress-title">
     <div className="section-heading">
       <div><p className="step-kicker">PROCESO {status.id.slice(0, 8).toUpperCase()}</p><h2 id="process-progress-title">{status.filename}</h2></div>
@@ -127,6 +127,7 @@ export function ProcessProgress({client, status}: {client: FunctionalV2Client; s
       <span style={{width: `${Math.round(status.signatureCount / status.stages.length * 100)}%`}}/>
     </div>
     <ol className="stage-list">{status.stages.map(stage => <StagePill key={stage.ordinal} stage={stage}/>)}</ol>
+    {status.status==='final_review'&&onFinalize&&<button type="button" onClick={onFinalize}>Aprobar y cerrar proceso</button>}
     {complete && <a className="button-link" href={client.processPdfUrl(status.id)} download>Descargar PDF final <span aria-hidden="true">↓</span></a>}
     <details className="quiet-details"><summary>Qué significa este estado</summary><p>LeapSign muestra únicamente turnos aceptados por el servidor. La validación técnica no sustituye una comprobación jurídica o de identidad.</p></details>
   </section>;
@@ -204,6 +205,7 @@ function TrackingWorkspace({dependencies, processId}: {dependencies: FunctionalA
     try {setStatus(await dependencies.client.getProcess(processId, signal)); setMessage('');}
     catch {if (!signal?.aborted) setMessage('No pudimos actualizar el proceso. Comprueba el enlace e inténtalo de nuevo.');}
   }, [dependencies.client, processId]);
+  const finalize=useCallback(async()=>{setMessage('Cerrando el proceso…');try{setStatus(await dependencies.client.finalizeProcess(processId));setMessage('Proceso cerrado. El PDF final ya está disponible.');}catch{setMessage('No pudimos cerrar el proceso. Confirma que todas las firmas estén guardadas.');}},[dependencies.client,processId]);
   useEffect(() => {
     const controller = new AbortController();
     void refresh(controller.signal);
@@ -213,7 +215,7 @@ function TrackingWorkspace({dependencies, processId}: {dependencies: FunctionalA
   return <main className="workspace-main narrow-workspace">
     <div className="tracking-heading"><div><p className="eyebrow">SEGUIMIENTO PRIVADO</p><h1>Así avanza el documento</h1></div><button className="secondary-button" type="button" onClick={() => {void refresh();}}>Actualizar</button></div>
     {message && <p className="workspace-message" role="status">{message}</p>}
-    {status && <ProcessProgress client={dependencies.client} status={status}/>}
+    {status && <ProcessProgress client={dependencies.client} status={status} onFinalize={status.status==='final_review'?()=>{void finalize();}:undefined}/>}
     <details className="quiet-details"><summary>Identificador del proceso</summary><code>{processId}</code></details>
   </main>;
 }
@@ -260,6 +262,12 @@ function NotFound() {
   return <main className="not-found"><FrogTrail/><p className="eyebrow">ENLACE NO DISPONIBLE</p><h1>Esta ruta no corresponde a un proceso.</h1><a className="button-link" href="/">Volver al inicio</a></main>;
 }
 
+function VerificationWorkspace({dependencies,receiptId}:{dependencies:FunctionalAppDependencies;receiptId:string}){
+ const[value,setValue]=useState<Awaited<ReturnType<FunctionalV2Client['getVerification']>>>();const[message,setMessage]=useState('Consultando el recibo técnico…');
+ useEffect(()=>{const controller=new AbortController();void dependencies.client.getVerification(receiptId,controller.signal).then(result=>{setValue(result);setMessage('');}).catch(()=>{if(!controller.signal.aborted)setMessage('No pudimos verificar este recibo con la sesión actual.');});return()=>controller.abort();},[dependencies.client,receiptId]);
+ return <main className="workspace-main narrow-workspace"><div className="tracking-heading"><div><p className="eyebrow">RECIBO {receiptId.slice(0,8).toUpperCase()}</p><h1>Verificación técnica LeapSign</h1></div></div>{message&&<p className="workspace-message" role="status">{message}</p>}<section className="progress-card"><h2>Resultado del PDF</h2><dl><dt>Proceso</dt><dd>{value?.processId??'—'}</dd><dt>Hash SHA-256</dt><dd><code>{value?.signedSha256??'—'}</code></dd><dt>Firmante</dt><dd>{value?.signer??'—'}</dd><dt>Fecha de validación</dt><dd>{value?.validatedAt??'—'}</dd><dt>Integridad criptográfica</dt><dd>{value?.checks.cryptographicIntegrity??'—'}</dd><dt>Confianza de cadena</dt><dd>{value?.checks.trusted??'—'}</dd><dt>Revocación</dt><dd>{value?.revocation??'—'}</dd><dt>Recibo</dt><dd>{receiptId}</dd></dl><p>Este resultado técnico no determina por sí solo validez jurídica.</p></section></main>;
+}
+
 export function FunctionalApp({dependencies, route, initialUser}: {
   dependencies: FunctionalAppDependencies;
   route: AppRoute;
@@ -273,6 +281,7 @@ export function FunctionalApp({dependencies, route, initialUser}: {
       <AppHeader user={user} onSignOut={() => {void signOut();}}/>
       {route.kind === 'signer' ? <SignerWorkspace dependencies={dependencies} user={user} token={route.token}/>
         : route.kind === 'tracking' ? <TrackingWorkspace dependencies={dependencies} processId={route.processId}/>
+        : route.kind === 'verification' ? <VerificationWorkspace dependencies={dependencies} receiptId={route.receiptId}/>
         : <OwnerWorkspace dependencies={dependencies}/>}
     </> : <LoginView dependencies={dependencies} route={route} onSignedIn={setUser}/>}
     <footer className="legal-note">La validación técnica comprueba el PDF recibido según la política publicada; no determina por sí sola la identidad, la confianza ni la validez jurídica.</footer>

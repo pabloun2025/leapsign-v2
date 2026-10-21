@@ -67,6 +67,14 @@ describe('v2 functional UI transport', () => {
     expect(client.processPdfUrl(processId)).toBe(origin + `/api/v2/processes/${processId}/pdf`);
   });
 
+  it('requests explicit same-origin owner finalization',async()=>{
+    const value={id:processId,filename:'Acuerdo.pdf',status:'completed' as const,signatureCount:2,stages:[{ordinal:1,status:'validated' as const,current:false},{ordinal:2,status:'validated' as const,current:false}]};
+    const fetcher=vi.fn(async()=>Response.json(value)) as FunctionalFetch;
+    const client=new FunctionalV2Client({origin,fetch:fetcher});
+    await expect(client.finalizeProcess(processId)).resolves.toEqual(value);
+    expect(fetcher).toHaveBeenCalledWith(origin+`/api/v2/processes/${processId}/finalize`,expect.objectContaining({method:'POST'}));
+  });
+
   it('recovers a validated receipt after the submit response is lost', async () => {
     const fetcher = vi.fn(async () => Response.json({state: 'validated', report})) as FunctionalFetch;
     const client = new FunctionalV2Client({origin, fetch: fetcher});
@@ -94,6 +102,16 @@ describe('v2 functional routes and validation', () => {
     expect(parseAppRoute(`/firmar/${processId}`)).toEqual({kind: 'signer', token: processId});
     expect(parseAppRoute('/recuperar')).toEqual({kind: 'recovery'});
     expect(parseAppRoute('/firmar/../../private')).toEqual({kind: 'not-found'});
+    expect(parseAppRoute(`/verificar/${intentId}`)).toEqual({kind:'verification',receiptId:intentId});
+  });
+
+  it('renders the authenticated LeapSign QR verification dimensions',()=>{
+    const verificationDependencies:FunctionalAppDependencies={origin,client:new FunctionalV2Client({origin,fetch:vi.fn(async()=>Response.json({code:'UNUSED'})) as FunctionalFetch}),auth:{} as FunctionalAppDependencies['auth'],localSigner:vi.fn(),signingFlags:{DIRECT_P12_SIGNING_ENABLED:'true',FIRMAEC_COMPATIBILITY_PROFILE_ENABLED:'true'}};
+    const html=renderToStaticMarkup(<FunctionalApp dependencies={verificationDependencies} route={{kind:'verification',receiptId:intentId}} initialUser={{id:'actor',email:'owner@example.test',accessToken:'memory-only'}}/>);
+    expect(html).toContain('Verificación técnica LeapSign');
+    expect(html).toContain(intentId);
+    expect(html).toContain('Confianza de cadena');
+    expect(html).toContain('Revocación');
   });
 
   it('normalizes 1–20 unique signer emails and explains bad input locally', () => {
@@ -221,6 +239,13 @@ describe('v2 functional app shell', () => {
     expect(html).toContain('Descargar PDF final');
     expect(html).toContain(`/api/v2/processes/${processId}/pdf`);
     expect(html).not.toContain('@');
+  });
+
+  it('does not present final review as completed and requires the owner action',()=>{
+    const html=renderToStaticMarkup(<ProcessProgress client={dependencies.client} onFinalize={()=>{}} status={{id:processId,filename:'Acuerdo.pdf',status:'final_review',signatureCount:2,stages:[{ordinal:1,status:'validated',current:false},{ordinal:2,status:'validated',current:false}]}}/>);
+    expect(html).toContain('Aprobar y cerrar proceso');
+    expect(html).not.toContain('Descargar PDF final');
+    expect(html).not.toContain('status-completed');
   });
 
   it('offers explicit receipt lookup after an uncertain submission', () => {
