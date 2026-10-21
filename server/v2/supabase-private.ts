@@ -76,7 +76,7 @@ export function supabasePrivate(options: Options) {
     try {
       const body=rpcBody(args);const signal=deadline(caller,10_000);
       const response=await fetcher(`${url.origin}/rest/v1/rpc/${name}`,{
-        method:'POST',headers:serviceHeaders({'Accept':'application/json','Content-Type':'application/json'}),body,redirect:'error',cache:'no-store',signal,
+        method:'POST',headers:serviceHeaders({'Accept':'application/json','Content-Type':'application/json'}),body,redirect:'manual',cache:'no-store',signal,
       });
       const decoded=decode(await strictJson(response,RPC_RESPONSE_BYTES,signal));
       if(decoded===undefined)throw unavailable();
@@ -89,7 +89,7 @@ export function supabasePrivate(options: Options) {
     try {
       const signal=deadline(caller,10_000);const body=new Uint8Array(pdf);
       const response=await fetcher(`${url.origin}/storage/v1/object/${options.bucket}/${path}`,{
-        method:'POST',headers:serviceHeaders({'Accept':'application/json','Content-Type':'application/pdf','If-None-Match':'*','x-upsert':'false'}),body,redirect:'error',cache:'no-store',signal,
+        method:'POST',headers:serviceHeaders({'Accept':'application/json','Content-Type':'application/pdf','If-None-Match':'*','x-upsert':'false'}),body,redirect:'manual',cache:'no-store',signal,
       });
       const acknowledgement=await strictJson(response,STORAGE_RESPONSE_BYTES,signal);
       if(!isRecord(acknowledgement) || acknowledgement.Key!==`${options.bucket}/${path}` || Object.keys(acknowledgement).some(key=>key!=='Key' && key!=='Id') || ('Id' in acknowledgement && (typeof acknowledgement.Id!=='string' || !new RegExp(`^${UUID}$`).test(acknowledgement.Id))))throw unavailable();
@@ -103,7 +103,7 @@ export function supabasePrivate(options: Options) {
           try {
             const cleanupSignal=deadline(cleanupCaller,10_000);
             const cleanupResponse=await fetcher(`${url.origin}/storage/v1/object/${options.bucket}`,{
-              method:'DELETE',headers:serviceHeaders({'Accept':'application/json','Content-Type':'application/json'}),body:JSON.stringify({prefixes:[path]}),redirect:'error',cache:'no-store',signal:cleanupSignal,
+              method:'DELETE',headers:serviceHeaders({'Accept':'application/json','Content-Type':'application/json'}),body:JSON.stringify({prefixes:[path]}),redirect:'manual',cache:'no-store',signal:cleanupSignal,
             });
             const deleted=await strictJson(cleanupResponse,STORAGE_RESPONSE_BYTES,cleanupSignal);
             if(!Array.isArray(deleted) || deleted.length!==1 || !isRecord(deleted[0]) || deleted[0].name!==path || deleted[0].bucket_id!==options.bucket)throw unavailable();
@@ -123,7 +123,7 @@ export function supabasePrivate(options: Options) {
       if(token.length<20 || token.length>8192 || !/^[a-zA-Z0-9._-]+$/.test(token))return null;
       try {
         const signal=deadline(request.signal,5000);
-        const response=await fetcher(url.origin+'/auth/v1/user',{headers:{apikey:options.publicKey,Authorization:`Bearer ${token}`},redirect:'error',cache:'no-store',signal});
+        const response=await fetcher(url.origin+'/auth/v1/user',{headers:{apikey:options.publicKey,Authorization:`Bearer ${token}`},redirect:'manual',cache:'no-store',signal});
         if(contentType(response)!=='application/json'){await response.body?.cancel();return null;}
         const user=JSON.parse(new TextDecoder('utf-8',{fatal:true}).decode(await bounded(response,32768,signal)));
         return typeof user.id==='string' && new RegExp(`^${UUID}$`,'i').test(user.id) && !user.is_anonymous && Boolean(user.email_confirmed_at) ? user.id : null;
@@ -135,10 +135,11 @@ export function supabasePrivate(options: Options) {
       if(typeof token!=='string' || token.length<20 || token.length>8192 || !/^[a-zA-Z0-9._-]+$/.test(token))return null;
       try {
         const signal=deadline(caller,5000);
-        const response=await fetcher(url.origin+'/auth/v1/user',{headers:{apikey:options.publicKey,Authorization:`Bearer ${token}`},redirect:'error',cache:'no-store',signal});
+        const response=await fetcher(url.origin+'/auth/v1/user',{headers:{apikey:options.publicKey,Authorization:`Bearer ${token}`},redirect:'manual',cache:'no-store',signal});
         if(contentType(response)!=='application/json'){await response.body?.cancel();return null;}
         const user=JSON.parse(new TextDecoder('utf-8',{fatal:true}).decode(await bounded(response,32768,signal)));
-        return typeof user.id==='string' && new RegExp(`^${UUID}$`,'i').test(user.id) && !user.is_anonymous && Boolean(user.email_confirmed_at) ? user.id : null;
+        const valid=typeof user.id==='string' && new RegExp(`^${UUID}$`,'i').test(user.id) && !user.is_anonymous && Boolean(user.email_confirmed_at);
+        return valid ? user.id : null;
       } catch {return null;}
     },
     rpc,
@@ -149,7 +150,7 @@ export function supabasePrivate(options: Options) {
       if(!PRIVATE_PDF.test(path) || !Number.isInteger(maxBytes) || maxBytes<5 || maxBytes>MAX_PDF_BYTES)throw unavailable();
       try {
         const signal=deadline(caller,10_000);
-        const response=await fetcher(`${url.origin}/storage/v1/object/authenticated/${options.bucket}/${path}`,{headers:serviceHeaders(),redirect:'error',cache:'no-store',signal});
+        const response=await fetcher(`${url.origin}/storage/v1/object/authenticated/${options.bucket}/${path}`,{headers:serviceHeaders(),redirect:'manual',cache:'no-store',signal});
         if(contentType(response)!=='application/pdf'){await response.body?.cancel();throw unavailable();}
         const bytes=await bounded(response,maxBytes,signal);
         if(!validPdf(path,bytes))throw unavailable();

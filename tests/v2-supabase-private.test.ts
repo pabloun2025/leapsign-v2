@@ -24,7 +24,7 @@ describe('v2 private auth/storage adapters, mocked network only',()=>{
   const [target,init]=fetcher.mock.calls[0] as unknown as [string,RequestInit];
   expect(target).toBe(config.projectUrl+'/rest/v1/rpc/claim_signing_intent');
   expect(init.method).toBe('POST');
-  expect(init.redirect).toBe('error');
+  expect(init.redirect).toBe('manual');
   expect(init.cache).toBe('no-store');
   expect(JSON.parse(String(init.body))).toEqual({p_id:actor});
   expect(new Headers(init.headers).get('Authorization')).toBe(`Bearer ${config.serviceKey}`);

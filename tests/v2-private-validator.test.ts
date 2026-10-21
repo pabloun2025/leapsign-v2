@@ -27,7 +27,7 @@ describe('v2 private validator boundary',()=>{
  });
  it('sends only PDFs and authorized public policy, never credentials from a certificate',async()=>{
   const fetcher=vi.fn(async(_url,options)=>{
-   const body=JSON.parse(String(options?.body));expect(Object.keys(body).sort()).toEqual(['baseSha256','candidate','position','previous']);expect(options?.redirect).toBe('error');
+   const body=JSON.parse(String(options?.body));expect(Object.keys(body).sort()).toEqual(['baseSha256','candidate','position','previous']);expect(options?.redirect).toBe('manual');
    return Response.json({valid:false,error:'not a real signature'});
   }) as unknown as typeof fetch;
   const client=new OfflineValidatorClient({flags:{EXTERNAL_SIGNATURE_ENABLED:'true',FIRMAEC_COMPATIBILITY_PROFILE_ENABLED:'true'},url:'https://validator.invalid/validate',serviceToken:'x'.repeat(32),beforeValidation:async()=>{},fetch:fetcher});

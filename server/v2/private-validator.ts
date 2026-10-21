@@ -22,7 +22,7 @@ export class OfflineValidatorClient implements PrivatePdfValidator {
     if(!(pdf instanceof Uint8Array)||pdf.length<5||pdf.length>MAX_PDF_BYTES||new TextDecoder().decode(pdf.subarray(0,5))!=='%PDF-')throw new SigningError('DOCUMENT_MISMATCH');
     await this.config.beforeValidation();
     const target=new URL('/prepare',configured);
-    const response=await this.config.fetch(target,{method:'POST',redirect:'error',signal:AbortSignal.timeout(20_000),headers:{Authorization:`Bearer ${this.config.serviceToken}`,'Content-Type':'application/json'},body:JSON.stringify({pdf:Buffer.from(pdf).toString('base64')})});
+    const response=await this.config.fetch(target,{method:'POST',redirect:'manual',signal:AbortSignal.timeout(20_000),headers:{Authorization:`Bearer ${this.config.serviceToken}`,'Content-Type':'application/json'},body:JSON.stringify({pdf:Buffer.from(pdf).toString('base64')})});
     if(!response.ok||!response.body||response.redirected||response.headers.get('Content-Type')?.split(';')[0]!=='application/json')throw new SigningError('PREPARATION_UNAVAILABLE');
     const limit=15*1024*1024;const length=response.headers.get('Content-Length');
     if(length!==null&&(!/^\d+$/.test(length)||Number(length)>limit))throw new SigningError('INVALID_PREPARATION_REPORT');
@@ -46,7 +46,7 @@ export class OfflineValidatorClient implements PrivatePdfValidator {
     if (canonical.length > MAX_PDF_BYTES || signed.length > MAX_PDF_BYTES) throw new SigningError('DOCUMENT_TOO_LARGE');
     await this.config.beforeValidation();
     const response = await this.config.fetch(url, {
-      method:'POST', redirect:'error', signal:AbortSignal.timeout(20_000),
+      method:'POST', redirect:'manual', signal:AbortSignal.timeout(20_000),
       headers:{'Authorization':`Bearer ${this.config.serviceToken}`,'Content-Type':'application/json'},
       body:JSON.stringify({previous:Buffer.from(canonical).toString('base64'),candidate:Buffer.from(signed).toString('base64'),baseSha256:intent.baseSha256,position:intent.position,...(intent.expectedFingerprint ? {expectedFingerprint:intent.expectedFingerprint} : {})}),
     });
