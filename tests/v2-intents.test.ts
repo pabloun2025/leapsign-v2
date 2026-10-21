@@ -37,6 +37,6 @@ describe('v2 policy and server intent contracts (not a crypto substitute)',()=>{
   const i=intent();const repo: IntentRepository={claim:vi.fn(async()=>({intent:i,current:stage})),commitValidated:vi.fn(),reject:vi.fn()};
   const rejected:SignatureValidationResult={accepted:false,valid:false,policy:'leapsign-v2-ecuador-strict-1',error:'CHAIN_NOT_TRUSTED',issuerDetected:'CN=OTHER CA',legalOutcome:'not_determined_by_software',checks:{cryptographicIntegrity:'passed',cmsSignature:'passed',documentMatch:'passed',oneNewSignature:'passed',previousSignatures:'passed',chainBuilt:'failed',trusted:'failed',certificateValidity:'not_evaluated',revocation:'unavailable'}};
   await expect(submitExternal(repo,{validate:async()=>rejected},i.id,'ana',i.nonce,base,signed)).resolves.toEqual(rejected);
-  expect(repo.reject).toHaveBeenCalledWith(i.id,sha(signed),'CHAIN_NOT_TRUSTED');expect(repo.commitValidated).not.toHaveBeenCalled();
+  expect(repo.reject).toHaveBeenCalledWith(i.id,sha(signed),'VALIDATION_FAILED');expect(repo.commitValidated).not.toHaveBeenCalled();
  });
 });

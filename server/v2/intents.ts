@@ -64,7 +64,10 @@ export async function submitExternal(repo: IntentRepository, validator: PrivateP
     validateCandidateBinding(claimed.intent, canonical, signed);
     const report = await validator.validate(canonical, signed, claimed.intent);
     if (isPublicValidationReport(report) && !report.accepted) {
-      await repo.reject(id, hash, report.error ?? 'VALIDATION_FAILED');
+      // Persistence deliberately stores one bounded rejection state. The
+      // public report retains the validator's normalized reason for this
+      // response without widening the SQL/RPC contract.
+      await repo.reject(id, hash, 'VALIDATION_FAILED');
       return report;
     }
     assertValidationReport(claimed.intent, hash, report);
