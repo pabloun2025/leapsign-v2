@@ -1,0 +1,7 @@
+The BCE certificate encodings embedded here were obtained from the official
+FirmaEC/MINTEL firmadigital-libreria source identified in policy.json. That
+source labels the relevant Java files AGPL-3.0-or-later and credits Misael
+Fernández and Banco Central del Ecuador. The public CRL was obtained from the
+BCE distribution URL recorded in policy.json. LeapSign's repository remains
+licensed under AGPL-3.0-only; this notice preserves source attribution and does
+not assert ownership over public certificate facts.

@@ -1,0 +1,66 @@
+{
+  "version": 2,
+  "id": "leapsign-v2-ecuador-strict-1",
+  "incorporatedAt": "2026-10-21T00:00:00+00:00",
+  "legalOutcome": "not_determined_by_software",
+  "acceptance": {
+    "cryptographicIntegrity": "required",
+    "chainTrust": "required",
+    "certificateValidity": "required_at_server_receipt",
+    "revocation": "verified_good_required"
+  },
+  "authorities": [
+    {
+      "id": "bce",
+      "name": "Banco Central del Ecuador",
+      "compatibility": "technical_subset_only",
+      "revocationHosts": ["www.eci.bce.ec"],
+      "trustAnchors": [
+        {
+          "file": "bce/root-2011.der",
+          "sha256": "11c7c59be9d21d216f0e8151378d53d03b314060559adc49da161ec4f7829bec",
+          "incorporatedAt": "2026-10-21T00:00:00+00:00",
+          "source": {
+            "repository": "https://minka.gob.ec/mintel/ge/firmaec/firmadigital-libreria.git",
+            "commit": "014b32719ad9d0ead566e9b007ceffbdefcbe0e0",
+            "originalPath": "src/main/java/ec/gob/firmadigital/libreria/certificate/ec/bce/cert/CaCertBce.java",
+            "commitDate": "2026-08-26T10:06:42-05:00",
+            "license": "AGPL-3.0-or-later"
+          }
+        }
+      ],
+      "intermediates": [
+        {
+          "file": "bce/intermediate-2019.der",
+          "sha256": "fae2441b470fed69cce8629848941cd7930a86f35f6ad9a68d7fa717a26ee2d1",
+          "incorporatedAt": "2026-10-21T00:00:00+00:00",
+          "source": {
+            "repository": "https://minka.gob.ec/mintel/ge/firmaec/firmadigital-libreria.git",
+            "commit": "014b32719ad9d0ead566e9b007ceffbdefcbe0e0",
+            "originalPath": "src/main/java/ec/gob/firmadigital/libreria/certificate/ec/bce/cert/SubCaCertBce20192029.java",
+            "commitDate": "2026-08-26T10:06:42-05:00",
+            "license": "AGPL-3.0-or-later"
+          }
+        }
+      ],
+      "revocation": [
+        {
+          "file": "bce/root-crl-2026.der",
+          "sha256": "06cbfd7acd17c3e8b78074d1d781e28297ac6a5aca69956ccde3cabb04eccd52",
+          "incorporatedAt": "2026-10-21T00:00:00+00:00",
+          "url": "https://www.eci.bce.ec/CRL/cacrl.crl",
+          "lastUpdate": "2026-06-22T16:28:26+00:00",
+          "nextUpdate": "2027-03-22T16:28:26+00:00",
+          "issuerSha256": "11c7c59be9d21d216f0e8151378d53d03b314060559adc49da161ec4f7829bec",
+          "source": {
+            "repository": "https://minka.gob.ec/mintel/ge/firmaec/firmadigital-libreria.git",
+            "commit": "014b32719ad9d0ead566e9b007ceffbdefcbe0e0",
+            "originalPath": "src/main/java/ec/gob/firmadigital/libreria/certificate/ec/bce/cert/SubCaCertBce20192029.java",
+            "commitDate": "2026-08-26T10:06:42-05:00",
+            "license": "AGPL-3.0-or-later"
+          }
+        }
+      ]
+    }
+  ]
+}
