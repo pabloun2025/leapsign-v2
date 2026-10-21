@@ -20,11 +20,11 @@ export default{async fetch(request:Request,env:Env):Promise<Response>{
  try{
   if(env.V2_ORIGIN!==expectedOrigin||env.SUPABASE_V2_URL!==expectedSupabase||env.V2_STORAGE_BUCKET!=='v2-pdfs'||!env.SUPABASE_V2_PUBLISHABLE_KEY||!env.SUPABASE_V2_SERVICE_ROLE_KEY||!env.V2_VALIDATOR_URL||!env.V2_VALIDATOR_TOKEN)throw Error();
   const url=new URL(request.url);if(url.origin!==expectedOrigin)return json({code:'NOT_FOUND'},404);
-  const flags:SigningFlags={direct:enabled(env.V2_DIRECT_ENABLED),external:enabled(env.V2_EXTERNAL_ENABLED),firmaecProfile:enabled(env.V2_PROFILE_ENABLED)};
-  if(url.pathname==='/api/v2/config'&&request.method==='GET'&&request.headers.get('X-LeapSign-Client')==='v2')return json({origin:expectedOrigin,supabaseUrl:expectedSupabase,publishableKey:env.SUPABASE_V2_PUBLISHABLE_KEY,flags});
+  const flags:SigningFlags={DIRECT_P12_SIGNING_ENABLED:env.V2_DIRECT_ENABLED,EXTERNAL_SIGNATURE_ENABLED:env.V2_EXTERNAL_ENABLED,FIRMAEC_COMPATIBILITY_PROFILE_ENABLED:env.V2_PROFILE_ENABLED};
+  if(url.pathname==='/api/v2/config'&&request.method==='GET'&&request.headers.get('X-LeapSign-Client')==='v2')return json({origin:expectedOrigin,supabaseUrl:expectedSupabase,publishableKey:env.SUPABASE_V2_PUBLISHABLE_KEY,flags:{direct:enabled(env.V2_DIRECT_ENABLED),external:enabled(env.V2_EXTERNAL_ENABLED),firmaecProfile:enabled(env.V2_PROFILE_ENABLED)}});
   const database=supabasePrivate({projectUrl:expectedSupabase,publicKey:env.SUPABASE_V2_PUBLISHABLE_KEY,serviceKey:env.SUPABASE_V2_SERVICE_ROLE_KEY,bucket:'v2-pdfs'});
   let activeActor='';
-  const validator=new OfflineValidatorClient({flags,url:env.V2_VALIDATOR_URL,serviceToken:env.V2_VALIDATOR_TOKEN,fetch,beforeValidation:async()=>{if(!activeActor)throw Error();await database.rpc('v2_reserve_operation',{p_actor_id:activeActor,p_operation:'validation'},value=>value);}});
+  const validator=new OfflineValidatorClient({flags,url:env.V2_VALIDATOR_URL,serviceToken:env.V2_VALIDATOR_TOKEN,fetch:globalThis.fetch.bind(globalThis),beforeValidation:async()=>{if(!activeActor)throw Error();await database.rpc('v2_reserve_operation',{p_actor_id:activeActor,p_operation:'validation'},value=>value);}});
   const repositories=createSupabaseRepositories(database,validator);
   const authenticate=async(req:Request)=>{const actor=await database.authenticate(req);if(actor)activeActor=actor;return actor;};
   const reserve=async(actor:string,operation:string)=>{activeActor=actor;await repositories.reserve(actor,operation);};

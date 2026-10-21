@@ -19,4 +19,12 @@ describe('preview configuration cannot replace production', () => {
     for (const directive of ["connect-src 'self' https://lbreydchhskrrmpzniem.supabase.co", "object-src 'none'", "frame-src 'none'", "form-action 'none'", "worker-src 'self'", 'X-Robots-Tag: noindex']) expect(headers).toContain(directive);
     expect(headers).not.toContain("'unsafe-eval'");
   });
+  it('passes server feature flags in the canonical environment shape', () => {
+    const worker = readFileSync(resolve(root, 'v2/preview/src/worker.ts'), 'utf8');
+    expect(worker).toContain('DIRECT_P12_SIGNING_ENABLED:env.V2_DIRECT_ENABLED');
+    expect(worker).toContain('EXTERNAL_SIGNATURE_ENABLED:env.V2_EXTERNAL_ENABLED');
+    expect(worker).toContain('FIRMAEC_COMPATIBILITY_PROFILE_ENABLED:env.V2_PROFILE_ENABLED');
+    expect(worker).toContain('fetch:globalThis.fetch.bind(globalThis)');
+    expect(worker).not.toContain('const flags:SigningFlags={direct:');
+  });
 });
