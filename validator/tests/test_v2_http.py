@@ -154,6 +154,16 @@ def test_ready_fails_closed_when_policy_is_missing(monkeypatch):
         assert response.json() == {"detail": "VALIDATOR_NOT_READY"}
 
 
+def test_health_names_the_production_policy(monkeypatch):
+    monkeypatch.setenv("EXTERNAL_SIGNATURE_ENABLED", "true")
+    monkeypatch.setenv("FIRMAEC_COMPATIBILITY_PROFILE_ENABLED", "true")
+    with TestClient(app) as client:
+        assert client.get("/health").json() == {
+            "enabled": True,
+            "policy": "leapsign-v2-ecuador-strict-1",
+        }
+
+
 def test_ready_verifies_policy_hashes(sample, monkeypatch, tmp_path):
     policy = write_test_policy(tmp_path, sample["roots"][0], sample["crl"]())
     monkeypatch.setenv("V2_TRUST_POLICY_FILE", str(policy))

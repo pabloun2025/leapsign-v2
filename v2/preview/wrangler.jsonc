@@ -18,8 +18,8 @@
     "V2_ORIGIN": "https://pruebas.leapsign.app",
     "SUPABASE_V2_URL": "https://lbreydchhskrrmpzniem.supabase.co",
     "V2_STORAGE_BUCKET": "v2-pdfs",
-    "V2_DIRECT_ENABLED": "false",
-    "V2_EXTERNAL_ENABLED": "false",
-    "V2_PROFILE_ENABLED": "false"
+    "V2_DIRECT_ENABLED": "true",
+    "V2_EXTERNAL_ENABLED": "true",
+    "V2_PROFILE_ENABLED": "true"
   }
 }

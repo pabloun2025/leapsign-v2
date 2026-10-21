@@ -32,7 +32,7 @@ def authorize(request):
 
 @app.get("/health")
 async def health():
-    return {"enabled": enabled(), "policy": "leapsign-v2-strict-offline-1"}
+    return {"enabled": enabled(), "policy": "leapsign-v2-ecuador-strict-1"}
 
 
 @app.get("/ready")
