@@ -277,6 +277,7 @@ export function FunctionalApp({dependencies, route, initialUser}: {
   const signOut = async () => {try {await dependencies.client.deleteSession();} finally {setUser(undefined);}};
   if (route.kind === 'not-found') return <div className="leapsign-app"><NotFound/></div>;
   return <div className="leapsign-app">
+    <aside className="compatibility-notice" role="note"><strong>Compatibilidad inicial: certificados encadenados a BCE.</strong> Integridad criptográfica, confianza de la cadena y revocación son resultados distintos. LeapSign no declara por sí solo validez jurídica.</aside>
     {user ? <>
       <AppHeader user={user} onSignOut={() => {void signOut();}}/>
       {route.kind === 'signer' ? <SignerWorkspace dependencies={dependencies} user={user} token={route.token}/>
@@ -284,7 +285,7 @@ export function FunctionalApp({dependencies, route, initialUser}: {
         : route.kind === 'verification' ? <VerificationWorkspace dependencies={dependencies} receiptId={route.receiptId}/>
         : <OwnerWorkspace dependencies={dependencies}/>}
     </> : <LoginView dependencies={dependencies} route={route} onSignedIn={setUser}/>}
-    <footer className="legal-note">La validación técnica comprueba el PDF recibido según la política publicada; no determina por sí sola la identidad, la confianza ni la validez jurídica.</footer>
+    <footer className="legal-note">La validación técnica comprueba el PDF recibido según la política publicada; no determina por sí sola la identidad, la confianza ni la validez jurídica. Para otros emisores se mostrará CHAIN_NOT_TRUSTED y el emisor detectado desde el PDF firmado; no subas el certificado por separado.</footer>
   </div>;
 }
 

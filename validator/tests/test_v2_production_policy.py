@@ -80,6 +80,7 @@ def test_bce_chain_and_crl_are_well_formed_current_and_signed():
         crl.signature_hash_algorithm,
     )
     assert crl_entry["url"] == "https://www.eci.bce.ec/CRL/cacrl.crl"
+    assert crl_entry["refresh"]["issuerFile"] == "bce/root-2011.der"
     assert authority["revocationHosts"] == ["www.eci.bce.ec"]
 
     assert len(authority["revocation"]) == 2
@@ -94,3 +95,4 @@ def test_bce_chain_and_crl_are_well_formed_current_and_signed():
         leaf_crl.signature_hash_algorithm,
     )
     assert leaf_crl_entry["url"] == "https://www.eci.bce.ec/CRL/eci_bce_ec_crlfilecomb.crl"
+    assert leaf_crl_entry["refresh"]["issuerFile"] == "bce/intermediate-2019.der"

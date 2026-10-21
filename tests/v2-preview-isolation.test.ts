@@ -9,7 +9,8 @@ describe('preview configuration cannot replace production', () => {
     expect(production.name).toBe('firmador'); expect(preview.name).toBe('leapsign-v2-ui-preview');
     expect(preview.routes).toEqual([{pattern:'pruebas.leapsign.app',custom_domain:true}]);
     expect(preview.main).toBe('./src/worker.ts');
-    expect(Object.keys(preview).sort()).toEqual(['assets','compatibility_date','compatibility_flags','main','name','observability','preview_urls','routes','vars','workers_dev']);
+    expect(Object.keys(preview).sort()).toEqual(['assets','compatibility_date','compatibility_flags','main','name','observability','preview_urls','routes','triggers','vars','workers_dev']);
+    expect(preview.triggers).toEqual({crons:['17 */6 * * *']});
     expect(preview.compatibility_flags).toEqual(['nodejs_compat']);
     expect(preview.vars).toMatchObject({V2_ORIGIN:'https://pruebas.leapsign.app',SUPABASE_V2_URL:'https://lbreydchhskrrmpzniem.supabase.co',V2_STORAGE_BUCKET:'v2-pdfs'});
     expect(resolve(root, 'v2/preview', preview.assets.directory)).not.toBe(resolve(root, production.assets.directory));
@@ -26,5 +27,7 @@ describe('preview configuration cannot replace production', () => {
     expect(worker).toContain('FIRMAEC_COMPATIBILITY_PROFILE_ENABLED:env.V2_PROFILE_ENABLED');
     expect(worker).toContain('fetch:globalThis.fetch.bind(globalThis)');
     expect(worker).not.toContain('const flags:SigningFlags={direct:');
+    expect(worker).toContain("new URL('/refresh',validator)");
+    expect(worker).toContain('async scheduled(');
   });
 });

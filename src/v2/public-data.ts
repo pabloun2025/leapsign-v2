@@ -35,7 +35,8 @@ export function isPublicValidationReport(value: unknown): value is SignatureVali
       value.signatureCount!==value.previousSignatureCount+1||value.revocation!=='good'||checkNames.slice(0,-1).some(key=>checks[key]!=='passed')||checks.revocation!=='good'||!value.certificate)return false;
   }else{
     const errors=['INVALID_REQUEST','VALIDATION_UNAVAILABLE','TRUST_POLICY_REQUIRED','REVOCATION_UNAVAILABLE','REVOCATION_EVIDENCE_INVALID','DOCUMENT_MISMATCH','ONE_NEW_SIGNATURE_REQUIRED','CONTENT_CHANGED','UNAUTHORIZED_FORM_CHANGES','PREVIOUS_SIGNATURE_CHANGED','CMS_SIGNATURE_INVALID','CRYPTOGRAPHIC_VALIDATION_FAILED','CHAIN_NOT_TRUSTED','CERTIFICATE_NOT_VALID','CERTIFICATE_CONSTRAINTS_FAILED','CERTIFICATE_REVOKED','UNSIGNED_TRAILING_CONTENT','UNSUPPORTED_SIGNATURE_PROFILE','SIGNER_IDENTITY_MISMATCH','SIGNATURE_POSITION_MISMATCH','CANONICAL_PREPARATION_REQUIRED','UNSAFE_PDF_CONTENT','PDF_COMPLEXITY_LIMIT'];
-    if(!exact(value,['accepted','valid','policy','error','checks','legalOutcome'])||!errors.includes(String(value.error))||value.certificate!==undefined)return false;
+    if(!exact(value,['accepted','valid','policy','error','checks','legalOutcome'],['issuerDetected'])||!errors.includes(String(value.error))||value.certificate!==undefined||
+      (value.issuerDetected!==undefined&&(!['CHAIN_NOT_TRUSTED'].includes(String(value.error))||!text(value.issuerDetected,4096))))return false;
     return true;
   }
   if (value.certificate !== undefined) {

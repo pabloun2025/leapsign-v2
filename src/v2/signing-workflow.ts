@@ -30,7 +30,7 @@ const messages = {
   SIGNATURE_REJECTED: 'La firma no superó la validación. El turno no se ha completado.',
 } as const;
 export class WorkflowError extends Error {
-  constructor(readonly code: keyof typeof messages) { super(messages[code]); }
+  constructor(readonly code: keyof typeof messages, message:string=messages[code]) { super(message); }
 }
 type Prepared = Awaited<ReturnType<SigningWorkflowApi['prepare']>>;
 export type LocalSigner = (request: LocalWorkerRequest, signal: AbortSignal) => Promise<LocalSessionResult>;
@@ -151,6 +151,11 @@ export class SigningWorkflow {
     let report: SignatureValidationResult;
     try {report = await this.options.api.submit({intentId: prepared.intent.id, nonce: prepared.intent.nonce, pdf, sha256: hash}, signal);}
     catch {throw new WorkflowError('SUBMISSION_UNCONFIRMED');}
+    if (isPublicValidationReport(report) && !report.valid) {
+      const issuer = report.issuerDetected ? ` Emisor detectado: ${report.issuerDetected}.` : '';
+      const code = report.error === 'CHAIN_NOT_TRUSTED' ? 'CHAIN_NOT_TRUSTED' : report.error ?? 'SIGNATURE_REJECTED';
+      throw new WorkflowError('SIGNATURE_REJECTED', `${code}: la firma no fue aceptada.${issuer}`);
+    }
     if (!isPublicValidationReport(report) || report.valid !== true || report.baseSha256 !== prepared.intent.baseSha256 || report.signedSha256 !== hash ||
         report.revocation !== 'good' || !report.certificate || report.previousSignatureCount !== prepared.previousSignatureCount || report.signatureCount !== prepared.previousSignatureCount + 1 ||
         (prepared.intent.expectedFingerprint && report.certificate.fingerprint !== prepared.intent.expectedFingerprint)) throw new WorkflowError('SIGNATURE_REJECTED');
@@ -162,7 +167,7 @@ export class SigningWorkflow {
     const code = error instanceof WorkflowError ? error.code : error instanceof LocalSigningError && error.code === 'EXPIRED' ? 'EXPIRED' : 'LOCAL_FAILURE';
     const submitted = this.snapshot.phase === 'validating';
     if (submitted || code === 'EXPIRED') this.prepared = undefined;
-    this.update({phase: code === 'EXPIRED' ? 'expired' : submitted ? 'failed' : 'ready', message: messages[code], outcomeUnknown: code === 'SUBMISSION_UNCONFIRMED'});
+    this.update({phase: code === 'EXPIRED' ? 'expired' : submitted ? 'failed' : 'ready', message: error instanceof WorkflowError ? error.message : messages[code], outcomeUnknown: code === 'SUBMISSION_UNCONFIRMED'});
     throw new WorkflowError(code);
   }
   cancel() {

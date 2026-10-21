@@ -35,7 +35,7 @@ export type SignatureValidationResult = {
   checks: ValidationChecks; legalOutcome: 'not_determined_by_software';
   baseSha256?: string; signedSha256?: string;
   previousSignatureCount?: number; signatureCount?: number;
-  certificate?: PublicCertificate; revocation?: 'good' | 'revoked' | 'unknown' | 'unavailable'; error?: string;
+  certificate?: PublicCertificate; revocation?: 'good' | 'revoked' | 'unknown' | 'unavailable'; error?: string; issuerDetected?: string;
 };
 export interface SignatureProvider {
   prepareSigning(input: PrepareSigningInput): Promise<SigningIntent>;

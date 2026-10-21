@@ -27,6 +27,11 @@ describe('structured validation contract',()=>{
       error:'CHAIN_NOT_TRUSTED',legalOutcome:'not_determined_by_software',
       checks:{...checks,chainBuilt:'failed',trusted:'failed',certificateValidity:'not_evaluated',revocation:'unavailable'},
     })).toBe(true);
+    expect(isPublicValidationReport({
+      accepted:false,valid:false,policy:'leapsign-v2-ecuador-strict-1',
+      error:'CHAIN_NOT_TRUSTED',issuerDetected:'CN=OTHER CA',legalOutcome:'not_determined_by_software',
+      checks:{...checks,chainBuilt:'failed',trusted:'failed',certificateValidity:'not_evaluated',revocation:'unavailable'},
+    })).toBe(true);
   });
 
   it('rejects the former opaque valid report',()=>{

@@ -63,6 +63,10 @@ export async function submitExternal(repo: IntentRepository, validator: PrivateP
   try {
     validateCandidateBinding(claimed.intent, canonical, signed);
     const report = await validator.validate(canonical, signed, claimed.intent);
+    if (isPublicValidationReport(report) && !report.accepted) {
+      await repo.reject(id, hash, report.error ?? 'VALIDATION_FAILED');
+      return report;
+    }
     assertValidationReport(claimed.intent, hash, report);
     await repo.commitValidated(id, hash, report, signed); // Reserve upload, store immutable bytes, then CAS the version again.
     return report;

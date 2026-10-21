@@ -25,10 +25,14 @@ firmada sobre la revocación del certificado final. La CRL incluida acredita el
 estado de la intermedia; no sustituye la CRL/OCSP correspondiente a cada
 certificado final. Para los certificados finales se incorpora además la CRL
 combinada que el código oficial FirmaEC identifica como `BCE_CRL`; su vigencia
-es diaria y debe renovarse mediante revisión, nueva fijación de hash, pruebas y
-despliegue antes de `nextUpdate` (2026-10-22 02:03:33 UTC). No se descarga ni se
-reemplaza silenciosamente durante una validación. Si la evidencia aplicable no está disponible el resultado es
-`REVOCATION_UNAVAILABLE` y no se acepta.
+es diaria. El servicio consulta únicamente las dos URL HTTPS BCE fijadas en la
+política, sin redirecciones, con timeout y límite de 2 MiB. Cada reemplazo se
+analiza y su firma se verifica contra el emisor cuyo certificado y hash están
+fijados aquí; después se publica atómicamente en una caché local. La copia del
+repositorio solo se usa mientras siga vigente. Un disparador gratuito del
+Worker solicita renovación cada seis horas y `/ready` también anticipa la
+renovación al acercarse `nextUpdate`. Si ninguna evidencia aplicable está
+vigente, readiness y validación fallan cerrados.
 
 FirmaEC también contiene adaptadores/material para `alphatechnologies`, `anfac`,
 `appfirmas`, `argosdata`, `cj`, `corpnewbest`, `darkcam`, `datil`, `digercic`,

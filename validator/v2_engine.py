@@ -21,8 +21,9 @@ MAX_BYTES = 10 * 1024 * 1024
 
 
 class ValidationFailure(Exception):
-    def __init__(self, code: str):
+    def __init__(self, code: str, *, issuer: str | None = None):
         self.code = code
+        self.issuer = issuer
         super().__init__(code)
 
 
@@ -69,8 +70,11 @@ def rejection_report(error: ValidationFailure, *, policy=POLICY):
         checks["revocation"] = "unavailable" if code == "REVOCATION_UNAVAILABLE" else "unknown"
     for name in passed:
         checks[name] = "passed"
-    return {"accepted": False, "valid": False, "policy": policy, "error": code,
-            "checks": checks, "legalOutcome": "not_determined_by_software"}
+    report = {"accepted": False, "valid": False, "policy": policy, "error": code,
+              "checks": checks, "legalOutcome": "not_determined_by_software"}
+    if code == "CHAIN_NOT_TRUSTED" and error.issuer:
+        report["issuerDetected"] = error.issuer[:4096]
+    return report
 
 
 def require_passive_pdf(reader):
@@ -262,11 +266,11 @@ def validate_pair(previous: bytes, candidate: bytes, *, base_sha256: str,
             if problem in ("SIG_CONSTRAINTS_FAILURE", "CHAIN_CONSTRAINTS_FAILURE", "CRYPTO_CONSTRAINTS_FAILURE"):
                 raise ValidationFailure("CERTIFICATE_CONSTRAINTS_FAILED")
             if status.validation_path is None:
-                raise ValidationFailure("CHAIN_NOT_TRUSTED")
+                raise ValidationFailure("CHAIN_NOT_TRUSTED", issuer=certificate.issuer.human_friendly)
             if problem in ("TRY_LATER", "REVOCATION_OUT_OF_BOUNDS_NO_POE", "NO_POE"):
                 raise ValidationFailure("REVOCATION_UNAVAILABLE")
             if not status.trusted or not status.bottom_line:
-                raise ValidationFailure("CHAIN_NOT_TRUSTED")
+                raise ValidationFailure("CHAIN_NOT_TRUSTED", issuer=certificate.issuer.human_friendly)
             if status.modification_level is not None and status.modification_level > ModificationLevel.FORM_FILLING:
                 raise ValidationFailure("CONTENT_CHANGED")
         newest = signatures[-1]

@@ -200,6 +200,11 @@ describe('v2 functional app shell', () => {
 
   it('does not claim universal legal, trust or revocation validation', () => {
     const html = renderToStaticMarkup(<FunctionalApp dependencies={dependencies} route={{kind: 'owner'}}/>);
+    expect(html).toContain('Compatibilidad inicial: certificados encadenados a BCE');
+    expect(html).toContain('Integridad criptográfica, confianza de la cadena y revocación son resultados distintos');
+    expect(html).toContain('CHAIN_NOT_TRUSTED');
+    expect(html).toContain('emisor detectado');
+    expect(html).toContain('no subas el certificado por separado');
     expect(html).toContain('no determina por sí sola la identidad, la confianza ni la validez jurídica');
     expect(html).not.toMatch(/firma (100% )?(válida|legal)|validez garantizada/i);
   });

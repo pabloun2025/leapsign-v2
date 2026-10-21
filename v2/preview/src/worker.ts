@@ -15,6 +15,13 @@ const expectedOrigin='https://pruebas.leapsign.app';
 const expectedSupabase='https://lbreydchhskrrmpzniem.supabase.co';
 const json=(value:unknown,status=200)=>new Response(JSON.stringify(value),{status,headers:{'Cache-Control':'no-store','Content-Type':'application/json','X-Content-Type-Options':'nosniff','Referrer-Policy':'no-referrer'}});
 const enabled=(value:string)=>value==='true';
+const refreshRevocation=async(env:Env)=>{
+ const validator=new URL(env.V2_VALIDATOR_URL);
+ if(validator.protocol!=='https:'||validator.username||validator.password||validator.search||validator.hash||validator.pathname!=='/validate'||env.V2_VALIDATOR_TOKEN.length<32)throw Error('V2_CONFIGURATION_REQUIRED');
+ const response=await fetch(new URL('/refresh',validator),{method:'POST',redirect:'manual',signal:AbortSignal.timeout(20_000),headers:{Authorization:`Bearer ${env.V2_VALIDATOR_TOKEN}`}});
+ if(!response.ok||response.redirected){await response.body?.cancel();throw Error('REVOCATION_REFRESH_FAILED');}
+ await response.body?.cancel();
+};
 
 export default{async fetch(request:Request,env:Env):Promise<Response>{
  try{
@@ -41,4 +48,6 @@ export default{async fetch(request:Request,env:Env):Promise<Response>{
   const asset=await env.ASSETS.fetch(request);if(asset.status!==404)return asset;
   return env.ASSETS.fetch(new Request(new URL('/',request.url),request));
  }catch{return json({code:'V2_CONFIGURATION_REQUIRED'},503);}
+},async scheduled(_controller:unknown,env:Env,context:{waitUntil(promise:Promise<unknown>):void}){
+ context.waitUntil(refreshRevocation(env));
 }};

@@ -52,6 +52,14 @@
           "lastUpdate": "2026-06-22T16:28:26+00:00",
           "nextUpdate": "2027-03-22T16:28:26+00:00",
           "issuerSha256": "11c7c59be9d21d216f0e8151378d53d03b314060559adc49da161ec4f7829bec",
+          "refresh": {
+            "url": "https://www.eci.bce.ec/CRL/cacrl.crl",
+            "issuerFile": "bce/root-2011.der",
+            "cacheKey": "bce-root",
+            "timeoutSeconds": 8,
+            "maxBytes": 2097152,
+            "refreshBeforeSeconds": 43200
+          },
           "source": {
             "repository": "https://minka.gob.ec/mintel/ge/firmaec/firmadigital-libreria.git",
             "commit": "014b32719ad9d0ead566e9b007ceffbdefcbe0e0",
@@ -68,6 +76,14 @@
           "lastUpdate": "2026-10-21T01:15:39+00:00",
           "nextUpdate": "2026-10-22T02:03:33+00:00",
           "issuerSha256": "fae2441b470fed69cce8629848941cd7930a86f35f6ad9a68d7fa717a26ee2d1",
+          "refresh": {
+            "url": "https://www.eci.bce.ec/CRL/eci_bce_ec_crlfilecomb.crl",
+            "issuerFile": "bce/intermediate-2019.der",
+            "cacheKey": "bce-leaf-combined",
+            "timeoutSeconds": 8,
+            "maxBytes": 2097152,
+            "refreshBeforeSeconds": 43200
+          },
           "source": {
             "repository": "https://minka.gob.ec/mintel/ge/firmaec/firmadigital-libreria.git",
             "commit": "014b32719ad9d0ead566e9b007ceffbdefcbe0e0",

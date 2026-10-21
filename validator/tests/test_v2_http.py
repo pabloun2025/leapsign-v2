@@ -168,11 +168,10 @@ def test_ready_verifies_policy_hashes(sample, monkeypatch, tmp_path):
     policy = write_test_policy(tmp_path, sample["roots"][0], sample["crl"]())
     monkeypatch.setenv("V2_TRUST_POLICY_FILE", str(policy))
     with TestClient(app) as client:
-        assert client.get("/ready").json() == {
-            "ready": True,
-            "policy": "leapsign-v2-synthetic-test-only",
-            "authorities": ["synthetic-test-only"],
-        }
+        body = client.get("/ready").json()
+        assert body == {"ready": True, "policy": "leapsign-v2-synthetic-test-only",
+                        "authorities": ["synthetic-test-only"],
+                        "revocation": {"ready": True, "managed": False}}
         (tmp_path / "root.der").write_bytes(b"changed")
         response = client.get("/ready")
         assert response.status_code == 503
@@ -204,6 +203,7 @@ def test_production_policy_rejects_synthetic_chain_with_structured_report(sample
     assert report["accepted"] is False and report["valid"] is False
     assert report["policy"] == "leapsign-v2-ecuador-strict-1"
     assert report["error"] == "CHAIN_NOT_TRUSTED"
+    assert "LeapSign TEST CA" in report["issuerDetected"]
     assert report["checks"]["trusted"] == "failed"
     assert report["checks"]["cryptographicIntegrity"] == "passed"
     assert report["legalOutcome"] == "not_determined_by_software"

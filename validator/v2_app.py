@@ -10,12 +10,19 @@ import json
 import os
 from pathlib import Path
 import sys
+import logging
 from fastapi import FastAPI, HTTPException, Request
 from validator.v2_policy import load_policy, PolicyFailure
+from validator.v2_revocation import RevocationFailure, RevocationManager
 
 MAX_REQUEST = 29 * 1024 * 1024
 app = FastAPI(docs_url=None, redoc_url=None, openapi_url=None)
 slots = asyncio.Semaphore(1)
+logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s %(message)s")
+
+
+def revocation_manager():
+    return RevocationManager(os.environ["V2_TRUST_POLICY_FILE"])
 
 
 def enabled():
@@ -38,10 +45,20 @@ async def health():
 @app.get("/ready")
 async def ready():
     try:
+        revocation = await asyncio.to_thread(revocation_manager().refresh)
         loaded = load_policy(os.environ["V2_TRUST_POLICY_FILE"])
-        return {"ready": True, "policy": loaded["id"], "authorities": loaded["authorities"]}
-    except (KeyError, PolicyFailure):
+        return {"ready": True, "policy": loaded["id"], "authorities": loaded["authorities"], "revocation": revocation}
+    except (KeyError, PolicyFailure, RevocationFailure):
         raise HTTPException(503, "VALIDATOR_NOT_READY") from None
+
+
+@app.post("/refresh")
+async def refresh(request: Request):
+    authorize(request)
+    try:
+        return await asyncio.to_thread(revocation_manager().refresh, force=True)
+    except (KeyError, RevocationFailure):
+        raise HTTPException(503, "REVOCATION_NOT_READY") from None
 
 
 async def run_private_worker(request: Request, *, operation=None, output_limit=65536):
@@ -97,6 +114,14 @@ async def run_private_worker(request: Request, *, operation=None, output_limit=6
 
 @app.post("/validate")
 async def validate(request: Request):
+    authorize(request)
+    try:
+        await asyncio.to_thread(revocation_manager().refresh)
+    except (KeyError, RevocationFailure):
+        # The isolated loader verifies the same cache and bundled fallback and
+        # returns a normalized fail-closed trust report. It remains the final
+        # authority instead of turning malformed client requests into an oracle.
+        pass
     return await run_private_worker(request)
 
 

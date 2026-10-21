@@ -9,6 +9,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 from asn1crypto import crl, ocsp, x509
+from validator.v2_revocation import cached_crl, RevocationFailure
 
 
 class PolicyFailure(Exception):
@@ -84,6 +85,10 @@ def load_policy(manifest_path: str | Path):
                 raise PolicyFailure("TRUST_POLICY_REQUIRED")
             values = [_material(manifest.parent, entry, parser) for entry in entries]
             if source_name == "revocation":
+                try:
+                    values = [cached_crl(manifest, entry, value) for entry, value in zip(entries, values)]
+                except RevocationFailure:
+                    raise PolicyFailure("TRUST_POLICY_REQUIRED") from None
                 now = datetime.now(timezone.utc)
                 for value in values:
                     parsed = crl.CertificateList.load(value)["tbs_cert_list"]

@@ -2,3 +2,4 @@
 @media(max-width:800px){.auth-layout{grid-template-columns:1fr}.auth-story{min-height:48vh}.auth-card{margin:24px}.workspace-grid{grid-template-columns:1fr}.workspace-intro .frog-trail{display:none}.account-email{display:none}.signer-context{flex-direction:column;gap:4px}.section-heading{align-items:flex-start}.copy-row{flex-direction:column}}
 @media(max-width:480px){.auth-story{padding:30px 22px}.auth-story h1{font-size:39px}.auth-card{margin:16px;padding:24px}.workspace-main{padding:28px 16px}.task-card,.progress-card{padding:20px}.app-header{padding:0 18px}.frog-trail{gap:5px}.hop-line{width:25px}}
 @media(prefers-reduced-motion:reduce){*{scroll-behavior:auto!important}}
+.compatibility-notice{padding:10px 24px;text-align:center;background:#fff3d9;color:#533d12;border-bottom:1px solid #dfca91;font-size:13px;line-height:1.5}.compatibility-notice strong{margin-right:.35em}
