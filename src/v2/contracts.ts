@@ -19,10 +19,23 @@ export type SignedDocument = { intentId: string; pdf: Uint8Array; sha256: string
 export type LocalSigningInput = { intent: SigningIntent; pdf: Uint8Array; certificate: File; password: string; reason: string; location: string };
 export type ExternalSigningInput = { intentId: string; pdf: File };
 export type ValidateSignatureInput = { intentId: string; pdf: Uint8Array };
+export type ValidationChecks = {
+  cryptographicIntegrity: 'passed' | 'failed' | 'not_evaluated';
+  cmsSignature: 'passed' | 'failed' | 'not_evaluated';
+  documentMatch: 'passed' | 'failed' | 'not_evaluated';
+  oneNewSignature: 'passed' | 'failed' | 'not_evaluated';
+  previousSignatures: 'passed' | 'failed' | 'not_evaluated';
+  chainBuilt: 'passed' | 'failed' | 'not_evaluated';
+  trusted: 'passed' | 'failed' | 'not_evaluated';
+  certificateValidity: 'passed' | 'failed' | 'not_evaluated';
+  revocation: 'good' | 'revoked' | 'unknown' | 'unavailable' | 'not_evaluated';
+};
 export type SignatureValidationResult = {
-  valid: boolean; policy: 'leapsign-v2-strict-offline-1'; baseSha256: string;
-  signedSha256: string; previousSignatureCount: number; signatureCount: number;
-  certificate?: PublicCertificate; revocation: 'good' | 'failed'; error?: string;
+  accepted: boolean; valid: boolean; policy: `leapsign-v2-${string}`;
+  checks: ValidationChecks; legalOutcome: 'not_determined_by_software';
+  baseSha256?: string; signedSha256?: string;
+  previousSignatureCount?: number; signatureCount?: number;
+  certificate?: PublicCertificate; revocation?: 'good' | 'revoked' | 'unknown' | 'unavailable'; error?: string;
 };
 export interface SignatureProvider {
   prepareSigning(input: PrepareSigningInput): Promise<SigningIntent>;

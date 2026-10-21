@@ -3,6 +3,7 @@ import {createHash} from 'node:crypto';
 import {SigningWorkflow, type SigningWorkflowApi, type LocalSigner} from '../src/v2/signing-workflow';
 import {issueIntent} from '../server/v2/intents';
 import type {SignatureValidationResult} from '../src/v2/contracts';
+import {acceptedReport} from './helpers/validation-report';
 const base = new TextEncoder().encode('%PDF-synthetic canonical');
 const candidate = new TextEncoder().encode('%PDF-synthetic canonical\n% not a real signature');
 const hash = (bytes: Uint8Array) => createHash('sha256').update(bytes).digest('hex');
@@ -13,7 +14,7 @@ const flags = {DIRECT_P12_SIGNING_ENABLED: 'true', EXTERNAL_SIGNATURE_ENABLED: '
 function fixture(options: {flags?: typeof flags; localSigner?: LocalSigner} = {}) {
   const intent = issueIntent({documentId: 'document', versionId: 'v0', stageId: 'stage', signerId: 'person', role: 'approval', baseSha256: hash(base), pageCount: 1, pageWidth: 595, pageHeight: 842}, 'person', input.profile, position);
   const prepared = {intent, pdf: base, filename: 'Contrato.pdf', previousSignatureCount: 0};
-  const report: SignatureValidationResult = {valid: true, policy: 'leapsign-v2-strict-offline-1', baseSha256: hash(base), signedSha256: hash(candidate), previousSignatureCount: 0, signatureCount: 1, revocation: 'good', certificate: {subject: 'Synthetic', issuer: 'Test only', serial: '1', fingerprint: 'a'.repeat(64), notBefore: new Date().toISOString(), notAfter: new Date(Date.now() + 86400_000).toISOString()}};
+  const report: SignatureValidationResult = acceptedReport({baseSha256:hash(base),signedSha256:hash(candidate)});
   const api: SigningWorkflowApi = {prepare: vi.fn(async () => prepared), submit: vi.fn(async () => report)};
   const localSigner = options.localSigner ?? vi.fn(async () => ({intentId: intent.id, pdf: candidate}));
   const flow = new SigningWorkflow({api, localSigner, flags: options.flags ?? flags, actorId: 'person', origin: 'https://leapsign.app'});

@@ -1,6 +1,7 @@
 import {describe, expect, it, vi} from 'vitest';
 import {V2HttpSigningApi} from '../src/v2/http-api';
 import {issueIntent} from '../server/v2/intents';
+import {acceptedReport} from './helpers/validation-report';
 const flags = {EXTERNAL_SIGNATURE_ENABLED: 'true', FIRMAEC_COMPATIBILITY_PROFILE_ENABLED: 'true'};
 const position = {page: 1, x: 320, y: 20, width: 250, height: 80};
 const input = {documentId: 'd', profile: 'firmaec-qr-compatible' as const, position};
@@ -8,7 +9,7 @@ function metadata() {
   const intent = issueIntent({documentId: 'd', versionId: 'v', stageId: 's', signerId: 'p', role: 'approval', baseSha256: 'a'.repeat(64), pageCount: 1, pageWidth: 595, pageHeight: 842}, 'p', input.profile, position);
   return {intent, filename: 'Acuerdo.pdf', previousSignatureCount: 0, pdfPath: `/api/v2/signing/intents/${intent.id}/pdf`};
 }
-const report = () => ({valid: true, policy: 'leapsign-v2-strict-offline-1', baseSha256: 'a'.repeat(64), signedSha256: 'b'.repeat(64), previousSignatureCount: 0, signatureCount: 1, revocation: 'good', certificate: {subject: 'Test', issuer: 'Synthetic CA', serial: '1', fingerprint: 'c'.repeat(64), notBefore: '2026-01-01T00:00:00Z', notAfter: '2027-01-01T00:00:00Z'}});
+const report = () => acceptedReport();
 const signal = () => new AbortController().signal;
 const api = (fetcher: typeof fetch, extra = {}) => new V2HttpSigningApi({origin: 'https://leapsign.app', flags, fetch: fetcher, ...extra});
 describe('v2 HTTP transport: no live services', () => {

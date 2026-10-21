@@ -24,10 +24,20 @@ export function isPublicSigningIntent(value: unknown): value is SigningIntent {
 }
 
 export function isPublicValidationReport(value: unknown): value is SignatureValidationResult {
-  if (!record(value) || !exact(value, ['valid','policy','baseSha256','signedSha256','previousSignatureCount','signatureCount','revocation'], ['certificate'])) return false;
-  if (typeof value.valid !== 'boolean' || value.policy !== 'leapsign-v2-strict-offline-1' || !hash(value.baseSha256) || !hash(value.signedSha256) ||
-      !count(value.previousSignatureCount, 0, 19) || !count(value.signatureCount, 0, 20) || !['good','failed'].includes(String(value.revocation))) return false;
-  if (value.valid && (value.revocation !== 'good' || value.signatureCount !== value.previousSignatureCount + 1 || !value.certificate)) return false;
+  if (!record(value) || typeof value.accepted !== 'boolean' || typeof value.valid !== 'boolean' || value.accepted !== value.valid ||
+      typeof value.policy !== 'string' || !/^leapsign-v2-[a-z0-9-]{1,80}$/.test(value.policy) || value.legalOutcome !== 'not_determined_by_software') return false;
+  const checks=value.checks;
+  const checkNames=['cryptographicIntegrity','cmsSignature','documentMatch','oneNewSignature','previousSignatures','chainBuilt','trusted','certificateValidity','revocation'];
+  if(!record(checks)||!exact(checks,checkNames)||!checkNames.slice(0,-1).every(key=>['passed','failed','not_evaluated'].includes(String(checks[key])))||!['good','revoked','unknown','unavailable','not_evaluated'].includes(String(checks.revocation)))return false;
+  if(value.accepted){
+    if(!exact(value,['accepted','valid','policy','baseSha256','signedSha256','previousSignatureCount','signatureCount','revocation','checks','legalOutcome','certificate'])||
+      !hash(value.baseSha256)||!hash(value.signedSha256)||!count(value.previousSignatureCount,0,19)||!count(value.signatureCount,1,20)||
+      value.signatureCount!==value.previousSignatureCount+1||value.revocation!=='good'||checkNames.slice(0,-1).some(key=>checks[key]!=='passed')||checks.revocation!=='good'||!value.certificate)return false;
+  }else{
+    const errors=['INVALID_REQUEST','VALIDATION_UNAVAILABLE','TRUST_POLICY_REQUIRED','REVOCATION_UNAVAILABLE','REVOCATION_EVIDENCE_INVALID','DOCUMENT_MISMATCH','ONE_NEW_SIGNATURE_REQUIRED','CONTENT_CHANGED','UNAUTHORIZED_FORM_CHANGES','PREVIOUS_SIGNATURE_CHANGED','CMS_SIGNATURE_INVALID','CRYPTOGRAPHIC_VALIDATION_FAILED','CHAIN_NOT_TRUSTED','CERTIFICATE_NOT_VALID','CERTIFICATE_CONSTRAINTS_FAILED','CERTIFICATE_REVOKED','UNSIGNED_TRAILING_CONTENT','UNSUPPORTED_SIGNATURE_PROFILE','SIGNER_IDENTITY_MISMATCH','SIGNATURE_POSITION_MISMATCH','CANONICAL_PREPARATION_REQUIRED','UNSAFE_PDF_CONTENT','PDF_COMPLEXITY_LIMIT'];
+    if(!exact(value,['accepted','valid','policy','error','checks','legalOutcome'])||!errors.includes(String(value.error))||value.certificate!==undefined)return false;
+    return true;
+  }
   if (value.certificate !== undefined) {
     const c = value.certificate;
     if (!record(c) || !exact(c, ['subject','issuer','serial','notBefore','notAfter','fingerprint']) || !text(c.subject, 4096) || !text(c.issuer, 4096) || !text(c.serial, 512) ||

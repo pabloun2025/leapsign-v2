@@ -2,6 +2,7 @@ import {createHash} from 'node:crypto';
 import {describe,expect,it,vi} from 'vitest';
 import type {SignatureValidationResult} from '../src/v2/contracts';
 import {postgresSubmission} from '../server/v2/postgres-submission';
+import {acceptedReport} from './helpers/validation-report';
 
 const intentId='11111111-1111-4111-8111-111111111111';
 const actor='22222222-2222-4222-8222-222222222222';
@@ -12,7 +13,7 @@ const nonce='A'.repeat(43);
 const baseHash='a'.repeat(64);
 const pdf=new TextEncoder().encode('%PDF-signed-synthetic');
 const candidateHash=createHash('sha256').update(pdf).digest('hex');
-const report:SignatureValidationResult={valid:true,policy:'leapsign-v2-strict-offline-1',baseSha256:baseHash,signedSha256:candidateHash,previousSignatureCount:0,signatureCount:1,revocation:'good',certificate:{subject:'Synthetic signer',issuer:'Synthetic CA',serial:'1',fingerprint:'c'.repeat(64),notBefore:'2026-01-01T00:00:00Z',notAfter:'2027-01-01T00:00:00Z'}};
+const report:SignatureValidationResult=acceptedReport({baseSha256:baseHash,signedSha256:candidateHash});
 const claimed={intent:{id:intentId,documentId,versionId,baseSha256:baseHash,stageId,signerId:actor,role:'signer',profile:'firmaec-qr-compatible',position:{page:1,x:300,y:20,width:250,height:80},issuedAt:'2026-10-20T10:00:00.000Z',expiresAt:'2026-10-20T10:05:00.000Z',state:'signed_pending_validation',correlationId:'66666666-6666-4666-8666-666666666666'},current:{documentId,versionId,baseSha256:baseHash,stageId,signerId:actor,role:'signer',pageCount:1,pageWidth:595,pageHeight:842}};
 
 function fixture(){

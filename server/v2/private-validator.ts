@@ -2,6 +2,7 @@ import {createHash} from 'node:crypto';
 import type {SigningIntent, SignatureValidationResult} from '../../src/v2/contracts';
 import {signingFlags, MAX_PDF_BYTES, type SigningFlags} from '../../src/v2/policy';
 import {assertValidationReport, SigningError, type PrivatePdfValidator} from './intents';
+import {isPublicValidationReport} from '../../src/v2/public-data';
 
 export type PreparedPdf={pdf:Uint8Array;sha256:string;byteSize:number;pageCount:number;lastPageWidth:number;lastPageHeight:number;signatureCount:number};
 
@@ -64,11 +65,8 @@ export class OfflineValidatorClient implements PrivatePdfValidator {
     let report: SignatureValidationResult;
     try {report=JSON.parse(data);} catch {throw new SigningError('INVALID_VALIDATION_REPORT');}
     // Enforce the public-only audit shape; no arbitrary validator error dump.
-    if (!report || typeof report!=='object' || Object.keys(report).some(key=>!['valid','policy','baseSha256','signedSha256','previousSignatureCount','signatureCount','certificate','revocation'].includes(key))) throw new SigningError('INVALID_VALIDATION_REPORT');
-    const cert=report.certificate;
-    if (!cert || Object.keys(cert).some(key=>!['subject','issuer','serial','notBefore','notAfter','fingerprint'].includes(key)) ||
-        !['subject','issuer','serial','notBefore','notAfter','fingerprint'].every(key=>typeof cert[key as keyof typeof cert]==='string' && cert[key as keyof typeof cert].length<=4096)) throw new SigningError('INVALID_VALIDATION_REPORT');
-    assertValidationReport(intent,createHash('sha256').update(signed).digest('hex'),report);
+    if (!isPublicValidationReport(report)) throw new SigningError('INVALID_VALIDATION_REPORT');
+    if(report.accepted)assertValidationReport(intent,createHash('sha256').update(signed).digest('hex'),report);
     return report;
   }
 }

@@ -5,6 +5,7 @@ import {createHash} from 'node:crypto';
 const intent=issueIntent({documentId:'d',versionId:'v',baseSha256:'a'.repeat(64),stageId:'s',signerId:'a',role:'approval',pageCount:1,pageWidth:595,pageHeight:842},'a','firmaec-qr-compatible',{page:1,x:320,y:20,width:250,height:80});
 const bytes=new TextEncoder().encode('%PDF-synthetic test only');
 describe('v2 private validator boundary',()=>{
+ const acceptedReport={accepted:true,valid:true,policy:'leapsign-v2-ecuador-strict-1',baseSha256:'a'.repeat(64),signedSha256:createHash('sha256').update(bytes).digest('hex'),previousSignatureCount:0,signatureCount:1,revocation:'good',legalOutcome:'not_determined_by_software',checks:{cryptographicIntegrity:'passed',cmsSignature:'passed',documentMatch:'passed',oneNewSignature:'passed',previousSignatures:'passed',chainBuilt:'passed',trusted:'passed',certificateValidity:'passed',revocation:'good'},certificate:{subject:'Synthetic',issuer:'Synthetic CA',serial:'1',fingerprint:'c'.repeat(64),notBefore:'2026-01-01T00:00:00Z',notAfter:'2027-01-01T00:00:00Z'}};
  it('does not contact the validator when disabled',async()=>{
   const fetcher=vi.fn();const quota=vi.fn();
   const client=new OfflineValidatorClient({flags:{},url:'https://validator.invalid/validate',serviceToken:'x'.repeat(32),beforeValidation:quota,fetch:fetcher});
@@ -19,6 +20,10 @@ describe('v2 private validator boundary',()=>{
  it('fails closed before the HTTP call if the budget cannot be reserved',async()=>{
   const fetcher=vi.fn();const client=new OfflineValidatorClient({flags:{EXTERNAL_SIGNATURE_ENABLED:'true',FIRMAEC_COMPATIBILITY_PROFILE_ENABLED:'true'},url:'https://validator.invalid/validate',serviceToken:'x'.repeat(32),beforeValidation:async()=>{throw Error('budget unavailable');},fetch:fetcher});
   await expect(client.validate(bytes,bytes,intent)).rejects.toThrow('budget unavailable');expect(fetcher).not.toHaveBeenCalled();
+ });
+ it('accepts the bounded structured report from the authenticated validator',async()=>{
+  const client=new OfflineValidatorClient({flags:{EXTERNAL_SIGNATURE_ENABLED:'true',FIRMAEC_COMPATIBILITY_PROFILE_ENABLED:'true'},url:'https://validator.invalid/validate',serviceToken:'x'.repeat(32),beforeValidation:async()=>{},fetch:async()=>Response.json(acceptedReport)});
+  await expect(client.validate(bytes,bytes,intent)).resolves.toEqual(acceptedReport);
  });
  it('sends only PDFs and authorized public policy, never credentials from a certificate',async()=>{
   const fetcher=vi.fn(async(_url,options)=>{

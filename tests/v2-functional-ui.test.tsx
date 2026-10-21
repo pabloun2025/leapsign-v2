@@ -6,23 +6,12 @@ import {
 } from '../v2/preview/ui/FunctionalApp';
 import {createSupabaseAuthPort, type SupabaseAuthClient} from '../v2/preview/ui/supabase-auth';
 import {parseAppRoute, receiptPresentation, validateSignerEmails} from '../v2/preview/ui/model';
+import {acceptedReport} from './helpers/validation-report';
 
 const origin = 'https://pruebas.leapsign.app';
 const processId = '22222222-2222-4222-8222-222222222222';
 const intentId = '33333333-3333-4333-8333-333333333333';
-const report = {
-  valid: true as const,
-  policy: 'leapsign-v2-strict-offline-1' as const,
-  baseSha256: 'a'.repeat(64),
-  signedSha256: 'b'.repeat(64),
-  previousSignatureCount: 0,
-  signatureCount: 1,
-  revocation: 'good' as const,
-  certificate: {
-    subject: 'CN=Persona de prueba', issuer: 'CN=CA de pruebas', serial: '1',
-    fingerprint: 'c'.repeat(64), notBefore: '2026-01-01T00:00:00Z', notAfter: '2027-01-01T00:00:00Z',
-  },
-};
+const report = acceptedReport();
 
 describe('v2 functional UI transport', () => {
   it('exchanges an in-memory Auth token for the strict same-origin session', async () => {
