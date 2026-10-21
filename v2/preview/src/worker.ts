@@ -28,7 +28,7 @@ export default{async fetch(request:Request,env:Env):Promise<Response>{
   const authenticate=async(req:Request)=>{const actor=await database.authenticate(req);if(actor)activeActor=actor;return actor;};
   const reserve=async(actor:string,operation:string)=>{activeActor=actor;await repositories.reserve(actor,operation);};
   if(url.pathname==='/api/v2/session')return createSessionHandler({verifyAccessToken:database.verifyAccessToken},expectedOrigin)(request);
-  if(url.pathname==='/api/v2/processes'||url.pathname.startsWith('/api/v2/processes/'))return createProcessHandler({origin:expectedOrigin,authenticate,reserve:reserve as never,create:repositories.create,status:repositories.status,download:repositories.download})(request);
+  if(url.pathname==='/api/v2/processes'||url.pathname.startsWith('/api/v2/processes/'))return createProcessHandler({origin:expectedOrigin,authenticate,reserve:reserve as never,create:repositories.create,status:repositories.status,download:repositories.download,finalize:repositories.finalize})(request);
   if(url.pathname==='/api/v2/signing/prepare'||/\/api\/v2\/signing\/intents\/[a-f0-9-]{36}\/pdf$/.test(url.pathname))return createPreparationHandler({origin:expectedOrigin,flags,authenticate,reserve:reserve as never,loadStage:repositories.loadStage,loadCanonical:repositories.loadCanonical,persistIntent:repositories.persistIntent,loadIntent:repositories.loadIntent})(request);
   if(url.pathname==='/api/v2/signing/submit'){
    const submission=postgresSubmission({rpc:(name,args)=>database.rpc(name,args,value=>value),writePrivateObject:database.writePrivateObject});

@@ -16,3 +16,12 @@ describe('v2 structured validation migration',()=>{
     expect(sql).toContain('revoke all on function signing_v2.commit_validated(uuid,text,uuid,integer,jsonb) from public,anon,authenticated,service_role');
   });
 });
+
+describe('v2 explicit owner finalization migration',()=>{
+  it('locks the owner document and only transitions a fully signed final review',()=>{
+    const sql=readFileSync('v2/migrations/005_owner_finalization.sql','utf8');
+    for(const token of ['for update',"status is distinct from 'final_review'","owner_id is distinct from p_actor_id","status='completed'","v2_finalize_process"]){expect(sql).toContain(token);}
+    expect(sql).toContain('grant execute on function public.v2_finalize_process(uuid,uuid) to service_role');
+    expect(sql).toContain('revoke all on function public.v2_finalize_process(uuid,uuid) from public,anon,authenticated,service_role');
+  });
+});
