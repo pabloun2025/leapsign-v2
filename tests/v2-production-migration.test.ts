@@ -9,6 +9,8 @@ describe('v2 structured validation migration',()=>{
     for(const token of ["p_report->>'accepted'","p_report->'checks'->>'cryptographicIntegrity'","p_report->'checks'->>'cmsSignature'","p_report->'checks'->>'chainBuilt'","p_report->'checks'->>'trusted'","p_report->'checks'->>'certificateValidity'","p_report->'checks'->>'revocation'","not_determined_by_software"]){
       expect(sql).toContain(token);
     }
+    expect(sql).toContain("p_report->'certificate' ?& array['subject','issuer','serial','fingerprint','notBefore','notAfter']");
+    expect(sql).toContain("p_report->'certificate'->>'fingerprint' !~ '^[a-f0-9]{64}$'");
   });
 
   it('keeps the replacement commit function private',()=>{

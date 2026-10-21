@@ -17,6 +17,18 @@ begin
   if jsonb_typeof(p_report) is distinct from 'object'
      or jsonb_typeof(p_report->'checks') is distinct from 'object'
      or jsonb_typeof(p_report->'certificate') is distinct from 'object'
+     or not (p_report->'certificate' ?& array['subject','issuer','serial','fingerprint','notBefore','notAfter'])
+     or jsonb_typeof(p_report->'certificate'->'subject') is distinct from 'string'
+     or jsonb_typeof(p_report->'certificate'->'issuer') is distinct from 'string'
+     or jsonb_typeof(p_report->'certificate'->'serial') is distinct from 'string'
+     or jsonb_typeof(p_report->'certificate'->'fingerprint') is distinct from 'string'
+     or jsonb_typeof(p_report->'certificate'->'notBefore') is distinct from 'string'
+     or jsonb_typeof(p_report->'certificate'->'notAfter') is distinct from 'string'
+     or char_length(p_report->'certificate'->>'subject') not between 1 and 4096
+     or char_length(p_report->'certificate'->>'issuer') not between 1 and 4096
+     or char_length(p_report->'certificate'->>'serial') not between 1 and 512
+     or p_report->'certificate'->>'fingerprint' !~ '^[a-f0-9]{64}$'
+     or (p_report->'certificate'->>'notAfter')::timestamptz <= (p_report->'certificate'->>'notBefore')::timestamptz
      or exists(select 1 from jsonb_object_keys(p_report) key where key not in
        ('accepted','valid','policy','baseSha256','signedSha256','previousSignatureCount','signatureCount','certificate','revocation','checks','legalOutcome'))
      or exists(select 1 from jsonb_object_keys(p_report->'checks') key where key not in

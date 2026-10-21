@@ -103,7 +103,7 @@ browser_lab = pytest.mark.skipif(not all(os.environ.get(name) for name in ("BROW
 @browser_lab
 @pytest.mark.skipif(not all(os.environ.get(name) for name in ("LIBPDF_VISIBLE_LAB", "QRCODE_MODULE_PATH", "JSQR_MODULE_PATH")), reason="Visible QR rendering/decoding laboratory is not configured")
 def test_visible_qr_decodes_from_actual_signed_pdf(sample):
-    audit_id = "urn:leapsign:signature:00000000-0000-4000-8000-000000000001"
+    audit_id = "https://pruebas.leapsign.app/verificar/00000000-0000-4000-8000-000000000001"
     p12, _ = container(sample)
     candidate = local_sign(sample["base"], p12, visible=True, qr=audit_id, use_browser=True)
     assert candidate is not None
@@ -136,7 +136,7 @@ def test_chromium_worker_three_incremental_signatures(sample):
     for number in range(1, 4):
         p12, _ = container(sample)
         candidate = local_sign(previous, p12, number, visible=True, use_browser=True,
-                               qr="urn:leapsign:signature:00000000-0000-4000-8000-000000000001")
+                               qr="https://pruebas.leapsign.app/verificar/00000000-0000-4000-8000-000000000001")
         assert candidate is not None
         report = validate(sample, previous, candidate, position={
             "page": 2, "x": 320, "y": 20 + 90 * (number - 1), "width": 250, "height": 80,
@@ -158,7 +158,8 @@ def test_independent_validator_rejects_invalid_local_certificate(sample, options
     p12, _ = container(sample, **options)
     candidate = local_sign(sample["base"], p12)
     assert candidate is not None
-    with pytest.raises(ValidationFailure, match="CRYPTOGRAPHIC_VALIDATION_FAILED"):
+    expected = "CERTIFICATE_NOT_VALID" if options.get("expired") else "CERTIFICATE_CONSTRAINTS_FAILED"
+    with pytest.raises(ValidationFailure, match=expected):
         validate(sample, candidate=candidate)
 
 
