@@ -2,7 +2,7 @@ import type {ValidationChecks} from '../../src/v2/contracts';
 import {V2_STAGING_ORIGIN,assertV2Origin} from '../../src/v2/policy';
 
 export type PublicVerification={processId:string;receiptId:string;signedSha256:string;signer:string;validatedAt:string;accepted:true;checks:ValidationChecks;revocation:'good';legalOutcome:'not_determined_by_software'};
-export interface VerificationDependencies{origin?:string;authenticate(request:Request):Promise<string|null>;reserve(actor:string,operation:'receipt'):Promise<void>;load(receiptId:string,actor:string):Promise<PublicVerification>;}
+export interface VerificationDependencies{origin?:string;authenticate(request:Request):Promise<string|null>;authenticateCandidates?(request:Request):Promise<Array<string|null|undefined>>;reserve(actor:string,operation:'receipt'):Promise<void>;load(receiptId:string,actor:string):Promise<PublicVerification>;}
 const security={'Cache-Control':'no-store','Referrer-Policy':'no-referrer','X-Content-Type-Options':'nosniff'};
 const json=(value:unknown,status=200)=>new Response(JSON.stringify(value),{status,headers:{...security,'Content-Type':'application/json'}});
 const uuid=(value:unknown):value is string=>typeof value==='string'&&/^[a-f0-9]{8}-(?:[a-f0-9]{4}-){3}[a-f0-9]{12}$/i.test(value);
@@ -16,5 +16,5 @@ function publicValue(value:unknown):PublicVerification{
 }
 export function createVerificationHandler(deps:VerificationDependencies){
  const origin=deps.origin??V2_STAGING_ORIGIN;assertV2Origin(origin);
- return async(request:Request)=>{const url=new URL(request.url);const match=/^\/api\/v2\/verifications\/([a-f0-9-]{36})$/.exec(url.pathname);if(url.origin!==origin||url.search||request.method!=='GET'||!match)return json({code:'NOT_FOUND'},404);if(request.headers.get('X-LeapSign-Client')!=='v2')return json({code:'FORBIDDEN'},403);try{const actor=await deps.authenticate(request);if(!actor)return json({code:'UNAUTHENTICATED'},401);await deps.reserve(actor,'receipt');return json(publicValue(await deps.load(match[1],actor)));}catch{return json({code:'NOT_FOUND'},404);}};
+ return async(request:Request)=>{const url=new URL(request.url);const match=/^\/api\/v2\/verifications\/([a-f0-9-]{36})$/.exec(url.pathname);if(url.origin!==origin||url.search||request.method!=='GET'||!match)return json({code:'NOT_FOUND'},404);if(request.headers.get('X-LeapSign-Client')!=='v2')return json({code:'FORBIDDEN'},403);let candidates:Array<string|null|undefined>;try{candidates=deps.authenticateCandidates?await deps.authenticateCandidates(request):[await deps.authenticate(request)];}catch{return json({code:'NOT_FOUND'},404);}const actors=[...new Set(candidates.filter((candidate):candidate is string=>typeof candidate==='string'&&candidate.length>0))];if(actors.length===0)return json({code:'UNAUTHENTICATED'},401);for(const actor of actors){try{await deps.reserve(actor,'receipt');return json(publicValue(await deps.load(match[1],actor)));}catch{continue;}}return json({code:'NOT_FOUND'},404);};
 }

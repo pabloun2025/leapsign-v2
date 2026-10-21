@@ -10,7 +10,7 @@ describe('preview configuration cannot replace production', () => {
     expect(preview.routes).toEqual([{pattern:'pruebas.leapsign.app',custom_domain:true}]);
     expect(preview.main).toBe('./src/worker.ts');
     expect(Object.keys(preview).sort()).toEqual(['assets','compatibility_date','compatibility_flags','main','name','observability','preview_urls','routes','triggers','vars','workers_dev']);
-    expect(preview.triggers).toEqual({crons:['17 */6 * * *']});
+    expect(preview.triggers).toEqual({crons:['17 */6 * * *','*/5 * * * *']});
     expect(preview.compatibility_flags).toEqual(['nodejs_compat']);
     expect(preview.vars).toMatchObject({V2_ORIGIN:'https://pruebas.leapsign.app',SUPABASE_V2_URL:'https://lbreydchhskrrmpzniem.supabase.co',V2_STORAGE_BUCKET:'v2-pdfs'});
     expect(resolve(root, 'v2/preview', preview.assets.directory)).not.toBe(resolve(root, production.assets.directory));
@@ -19,6 +19,14 @@ describe('preview configuration cannot replace production', () => {
     const headers = readFileSync(resolve(root, 'v2/preview/_headers'), 'utf8');
     for (const directive of ["connect-src 'self' https://lbreydchhskrrmpzniem.supabase.co", "object-src 'none'", "frame-src 'none'", "form-action 'none'", "worker-src 'self'", 'X-Robots-Tag: noindex']) expect(headers).toContain(directive);
     expect(headers).not.toContain("'unsafe-eval'");
+  });
+  it('bundles the approved v1 frog assets instead of an emoji substitute',()=>{
+    const app=readFileSync(resolve(root,'v2/preview/ui/FunctionalApp.tsx'),'utf8');
+    const css=readFileSync(resolve(root,'v2/preview/ui/functional.css'),'utf8');
+    expect(app).toContain("frog-brand.webp?url");
+    expect(app).toContain("frog-signing.webp?url");
+    expect(app).not.toContain('🐸');
+    for(const value of ['#17342c','#145845','#28715d','#f8f9f6','#dce6e0','Avenir Next'])expect(css).toContain(value);
   });
   it('passes server feature flags in the canonical environment shape', () => {
     const worker = readFileSync(resolve(root, 'v2/preview/src/worker.ts'), 'utf8');

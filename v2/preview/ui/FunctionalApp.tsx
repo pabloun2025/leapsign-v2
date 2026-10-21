@@ -4,8 +4,10 @@ import {V2HttpSigningApi} from '../../../src/v2/http-api';
 import type {SigningFlags} from '../../../src/v2/policy';
 import {SigningWorkflow, type LocalSigner} from '../../../src/v2/signing-workflow';
 import type {AuthPort, AuthenticatedUser} from './supabase-auth';
-import type {CreatedProcess, FunctionalV2Client, ProcessStatus, Receipt} from './functional-client';
+import type {AdminAudit,AdminUser,CreatedProcess, FunctionalV2Client, ProcessStatus, Receipt} from './functional-client';
 import {receiptPresentation, validateSignerEmails, type AppRoute} from './model';
+import frogBrand from '../../../public/frog-brand.webp?url';
+import frogSigning from '../../../public/frog-signing.webp?url';
 
 export type FunctionalAppDependencies = {
   origin: string;
@@ -19,10 +21,16 @@ function FrogTrail() {
   return <div className="frog-trail" role="img" aria-label="Rana saltando entre documentos PDF">
     <span className="pdf-leaf" aria-hidden="true">PDF</span>
     <span className="hop-line" aria-hidden="true"/>
-    <span className="frog-hop" aria-hidden="true">🐸</span>
+    <img className="frog-hop" src={frogSigning} alt="" aria-hidden="true"/>
     <span className="hop-line hop-line-last" aria-hidden="true"/>
     <span className="pdf-leaf pdf-leaf-next" aria-hidden="true">PDF</span>
   </div>;
+}
+
+function Brand() {
+  return <a className="wordmark" href="/" aria-label="LeapSign, inicio">
+    <span className="brand-mark"><img src={frogBrand} alt=""/></span><span className="brand-name">LeapSign</span>
+  </a>;
 }
 
 function LoginView({dependencies, route, onSignedIn}: {
@@ -31,6 +39,8 @@ function LoginView({dependencies, route, onSignedIn}: {
   onSignedIn: (user: AuthenticatedUser) => void;
 }) {
   const id = useId();
+  const registering = route.kind === 'register';
+  const confirming = route.kind === 'confirmation';
   const [recovering, setRecovering] = useState(route.kind === 'recovery');
   const [changingPassword, setChangingPassword] = useState(false);
   const [busy, setBusy] = useState(false);
@@ -41,6 +51,7 @@ function LoginView({dependencies, route, onSignedIn}: {
     void dependencies.auth.hasRecoverySession().then(value => {if (active) setChangingPassword(value);}).catch(() => {});
     return () => {active = false;};
   }, [dependencies.auth, route.kind]);
+  useEffect(()=>{if(!confirming)return;let active=true;void dependencies.auth.restore().then(async restored=>{if(!active)return;if(!restored){setMessage('El enlace de confirmación expiró o ya fue utilizado. Solicita uno nuevo desde el registro.');return;}await dependencies.client.exchangeSession(restored.accessToken);if(active)onSignedIn(restored);}).catch(()=>{if(active)setMessage('El enlace de confirmación expiró o ya fue utilizado. Solicita uno nuevo desde el registro.');});return()=>{active=false;};},[confirming,dependencies.auth,dependencies.client,onSignedIn]);
   const submit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     setBusy(true); setMessage('');
@@ -51,6 +62,9 @@ function LoginView({dependencies, route, onSignedIn}: {
         await dependencies.auth.updatePassword(String(data.get('new-password') ?? ''));
         setChangingPassword(false); setRecovering(false);
         setMessage('Contraseña actualizada. Ya puedes iniciar sesión.');
+      } else if (registering) {
+        await dependencies.auth.signUp({email,password:String(data.get('password')??''),firstName:String(data.get('first-name')??''),lastName:String(data.get('last-name')??'')},`${dependencies.origin}/confirmar`);
+        setMessage('Revisa tu correo para confirmar la cuenta. El enlace puede usarse una sola vez.');
       } else if (recovering) {
         await dependencies.auth.sendRecovery(email, `${dependencies.origin}/recuperar`);
         setMessage('Si el correo pertenece a una cuenta, recibirás instrucciones para recuperar el acceso.');
@@ -60,7 +74,8 @@ function LoginView({dependencies, route, onSignedIn}: {
         onSignedIn(user);
       }
     } catch {
-      setMessage(changingPassword ? 'No pudimos actualizar la contraseña. Solicita otro enlace.' : recovering
+      setMessage(changingPassword ? 'No pudimos actualizar la contraseña. Solicita otro enlace.' : registering
+        ? 'No pudimos completar el registro. Revisa los campos o inténtalo más tarde.' : recovering
         ? 'No pudimos solicitar la recuperación. Inténtalo de nuevo.'
         : 'No pudimos iniciar sesión. Revisa tus datos e inténtalo de nuevo.');
     } finally { setBusy(false); }
@@ -68,10 +83,10 @@ function LoginView({dependencies, route, onSignedIn}: {
   const signer = route.kind === 'signer';
   return <main className="auth-layout">
     <section className="auth-story" aria-labelledby={`${id}-welcome`}>
-      <a className="wordmark" href="/" aria-label="LeapSign, inicio">Leap<span>Sign</span></a>
+      <Brand/>
       <FrogTrail/>
       <p className="eyebrow">FIRMA SECUENCIAL DE PDF</p>
-      <h1 id={`${id}-welcome`}>{signer ? 'Te han invitado a firmar' : 'Documentos que avanzan, firma a firma.'}</h1>
+      <h1 id={`${id}-welcome`}>{signer ? 'Te han invitado a firmar' : registering ? 'Tu cuenta para dar el primer salto.' : confirming ? 'Confirma tu correo para continuar.' : 'Documentos que avanzan, firma a firma.'}</h1>
       <p>{signer
         ? 'Accede con el mismo correo de la invitación para revisar y firmar tu turno.'
         : 'Prepara un PDF, ordena a las personas firmantes y sigue cada salto hasta la versión final.'}</p>
@@ -79,31 +94,33 @@ function LoginView({dependencies, route, onSignedIn}: {
     </section>
     <section className="auth-card" aria-labelledby={`${id}-form-title`}>
       <p className="step-kicker">ACCESO SEGURO · V2</p>
-      <h2 id={`${id}-form-title`}>{changingPassword ? 'Crea una contraseña nueva' : recovering ? 'Recuperar acceso' : 'Inicia sesión'}</h2>
+      <h2 id={`${id}-form-title`}>{changingPassword ? 'Crea una contraseña nueva' : recovering ? 'Recuperar acceso' : registering ? 'Crea tu cuenta' : confirming ? 'Correo confirmado' : 'Inicia sesión'}</h2>
       <p>{changingPassword ? 'El enlace de recuperación está listo.' : recovering ? 'Te enviaremos un enlace al correo de tu cuenta.' : 'Usa tu cuenta de LeapSign v2.'}</p>
-      <form onSubmit={submit}>
+      {confirming ? <><p>{message||'Comprobando el enlace de confirmación…'}</p><a className="button-link" href="/">Ir al inicio de sesión</a></> : <form onSubmit={submit}>
         {changingPassword ? <>
           <label htmlFor={`${id}-new-password`}>Nueva contraseña</label>
           <input id={`${id}-new-password`} name="new-password" type="password" autoComplete="new-password" required minLength={8} maxLength={4096}/>
         </> : <>
+          {registering && <div className="name-fields"><div><label htmlFor={`${id}-first-name`}>Nombres</label><input id={`${id}-first-name`} name="first-name" autoComplete="given-name" required maxLength={80}/></div><div><label htmlFor={`${id}-last-name`}>Apellidos</label><input id={`${id}-last-name`} name="last-name" autoComplete="family-name" required maxLength={120}/></div></div>}
           <label htmlFor={`${id}-email`}>Correo</label>
           <input id={`${id}-email`} name="email" type="email" autoComplete="email" required maxLength={254}/>
-          {!recovering && <><label htmlFor={`${id}-password`}>Contraseña</label><input id={`${id}-password`} name="password" type="password" autoComplete="current-password" required maxLength={4096}/></>}
+          {!recovering && <><label htmlFor={`${id}-password`}>Contraseña</label><input id={`${id}-password`} name="password" type="password" autoComplete={registering?'new-password':'current-password'} required minLength={registering?12:1} maxLength={4096}/>{registering&&<small>12 caracteres como mínimo, con mayúscula, minúscula y número.</small>}</>}
         </>}
-        <button type="submit" disabled={busy}>{busy ? 'Espera un momento…' : changingPassword ? 'Guardar contraseña' : recovering ? 'Enviar enlace' : 'Entrar'}</button>
-      </form>
-      {!changingPassword && <button className="text-button" type="button" onClick={() => {setRecovering(value => !value); setMessage('');}}>
+        <button type="submit" disabled={busy}>{busy ? 'Espera un momento…' : changingPassword ? 'Guardar contraseña' : recovering ? 'Enviar enlace' : registering ? 'Crear cuenta' : 'Entrar'}</button>
+      </form>}
+      {!changingPassword && !registering && !confirming && <button className="text-button" type="button" onClick={() => {setRecovering(value => !value); setMessage('');}}>
         {recovering ? 'Volver a iniciar sesión' : 'Recuperar acceso'}
       </button>}
+      {!changingPassword&&!recovering&&!confirming&&<p className="auth-switch">{registering?'¿Ya tienes cuenta?':'¿Aún no tienes cuenta?'} <a href={registering?'/':'/registro'}>{registering?'Inicia sesión':'Crear cuenta'}</a></p>}
       {message && <p className="form-message" role="status">{message}</p>}
     </section>
   </main>;
 }
 
-function AppHeader({user, onSignOut}: {user: AuthenticatedUser; onSignOut: () => void}) {
+function AppHeader({user,guest,onSignOut}: {user: AuthenticatedUser;guest?:boolean; onSignOut: () => void}) {
   return <header className="app-header">
-    <a className="wordmark" href="/" aria-label="LeapSign, inicio">Leap<span>Sign</span></a>
-    <nav aria-label="Cuenta"><span className="account-email">{user.email}</span><button className="text-button" type="button" onClick={onSignOut}>Salir</button></nav>
+    <Brand/>
+    <nav aria-label="Cuenta">{!guest&&<><a href="/perfil">Perfil</a><a href="/administracion">Administración</a></>}<span className="account-email">{user.email}</span><button className="text-button" type="button" onClick={onSignOut}>Salir</button></nav>
   </header>;
 }
 
@@ -262,6 +279,10 @@ function NotFound() {
   return <main className="not-found"><FrogTrail/><p className="eyebrow">ENLACE NO DISPONIBLE</p><h1>Esta ruta no corresponde a un proceso.</h1><a className="button-link" href="/">Volver al inicio</a></main>;
 }
 
+function ProfileWorkspace({user}:{user:AuthenticatedUser}){return <main className="workspace-main narrow-workspace"><p className="eyebrow">MI CUENTA</p><h1>Perfil</h1><section className="task-card"><h2>Datos de acceso</h2><p><strong>Correo:</strong> {user.email}</p><p>La contraseña se administra con Supabase Auth y nunca es visible para LeapSign.</p><a className="button-link" href="/recuperar">Cambiar contraseña</a></section></main>}
+function AdministrationWorkspace({client}:{client:FunctionalV2Client}){const[users,setUsers]=useState<AdminUser[]>([]);const[audit,setAudit]=useState<AdminAudit[]>([]);const[search,setSearch]=useState('');const[page,setPage]=useState(1);const[total,setTotal]=useState(0);const[message,setMessage]=useState('Cargando usuarios autorizados…');const load=useCallback(async()=>{setMessage('Cargando usuarios autorizados…');try{const[result,events]=await Promise.all([client.listAdminUsers(page,search),client.listAdminAudit(1)]);setUsers(result.users);setTotal(result.total);setAudit(events);setMessage(result.users.length?'':'No hay usuarios para esta búsqueda.');}catch{setMessage('No tienes acceso administrativo o el servicio no está disponible.');}},[client,page,search]);useEffect(()=>{void load();},[load]);const invite=async(event:FormEvent<HTMLFormElement>)=>{event.preventDefault();const form=event.currentTarget;const email=String(new FormData(form).get('email')??'');try{await client.inviteAdminUser(email);form.reset();setMessage('Invitación enviada sin establecer contraseña.');await load();}catch{setMessage('No pudimos enviar la invitación.');}};const act=async(id:string,action:'resend'|'recover'|'suspend'|'reactivate')=>{try{await client.adminUserAction(id,action);setMessage('Acción registrada.');await load();}catch{setMessage('No pudimos completar la acción.');}};return <main className="workspace-main"><p className="eyebrow">ACCESO RESTRINGIDO</p><h1>Administración de usuarios</h1><section className="task-card"><h2>Usuarios de LeapSign v2</h2><p>Los permisos se verifican con el rol administrativo del servidor. Ningún administrador puede ver ni establecer contraseñas.</p><form className="admin-invite" onSubmit={invite}><label htmlFor="admin-invite-email">Invitar por correo</label><input id="admin-invite-email" name="email" type="email" required maxLength={254}/><button type="submit">Enviar invitación</button></form><label htmlFor="admin-search">Buscar por correo</label><div className="copy-row"><input id="admin-search" type="search" value={search} onChange={event=>setSearch(event.target.value)}/><button type="button" onClick={()=>{setPage(1);void load();}}>Buscar</button></div><p role="status">{message}</p><div className="admin-table" role="region" aria-label="Usuarios" tabIndex={0}><table><thead><tr><th>Correo</th><th>Estado</th><th>Creado</th><th>Último acceso</th><th>Acciones</th></tr></thead><tbody>{users.map(item=><tr key={item.id}><td>{item.email}</td><td>{item.status}</td><td>{new Date(item.createdAt).toLocaleDateString('es-EC')}</td><td>{item.lastSignInAt?new Date(item.lastSignInAt).toLocaleDateString('es-EC'):'—'}</td><td><button type="button" className="text-button" onClick={()=>void act(item.id,'recover')}>Recuperar</button><button type="button" className="text-button" onClick={()=>void act(item.id,item.status==='suspended'?'reactivate':'suspend')}>{item.status==='suspended'?'Reactivar':'Suspender'}</button></td></tr>)}</tbody></table></div><nav className="admin-pagination" aria-label="Paginación"><button type="button" disabled={page===1} onClick={()=>setPage(value=>value-1)}>Anterior</button><span>Página {page}</span><button type="button" disabled={page*50>=total} onClick={()=>setPage(value=>value+1)}>Siguiente</button></nav><details className="quiet-details"><summary>Auditoría administrativa</summary><ul>{audit.map(event=><li key={event.id}>{event.action} · {event.targetEmail??event.targetUserId??'usuario'} · {new Date(event.createdAt).toLocaleString('es-EC')}</li>)}</ul></details></section></main>}
+function ErrorWorkspace({status}:{status:401|403|503}){const copy=status===401?'Tu sesión expiró. Inicia sesión otra vez.':status===403?'No tienes permiso para abrir esta sección.':'El servicio no está disponible por el momento.';return <main className="not-found"><FrogTrail/><p className="eyebrow">ERROR {status}</p><h1>{copy}</h1><a className="button-link" href="/">Volver al inicio</a></main>}
+
 function VerificationWorkspace({dependencies,receiptId}:{dependencies:FunctionalAppDependencies;receiptId:string}){
  const[value,setValue]=useState<Awaited<ReturnType<FunctionalV2Client['getVerification']>>>();const[message,setMessage]=useState('Consultando el recibo técnico…');
  useEffect(()=>{const controller=new AbortController();void dependencies.client.getVerification(receiptId,controller.signal).then(result=>{setValue(result);setMessage('');}).catch(()=>{if(!controller.signal.aborted)setMessage('No pudimos verificar este recibo con la sesión actual.');});return()=>controller.abort();},[dependencies.client,receiptId]);
@@ -274,17 +295,33 @@ export function FunctionalApp({dependencies, route, initialUser}: {
   initialUser?: AuthenticatedUser;
 }) {
   const [user, setUser] = useState<AuthenticatedUser | undefined>(initialUser);
-  const signOut = async () => {try {await dependencies.client.deleteSession();} finally {setUser(undefined);}};
+  const [signerDocument,setSignerDocument]=useState(route.kind==='signer-session'?route.processId:route.kind==='signer'&&initialUser?route.token:'');
+  const [sessionMessage,setSessionMessage]=useState('');
+  useEffect(()=>{
+    if(initialUser)return;let active=true;const restore=async()=>{try{
+      if(route.kind==='signer'){await dependencies.client.deleteSession().catch(()=>{});const guest=await dependencies.client.exchangeGuest(route.token);if(!active)return;setUser({id:guest.actorId,email:guest.email,accessToken:'guest-session'});setSignerDocument(guest.documentId);history.replaceState(null,'',`/firmar/proceso/${guest.documentId}`);return;}
+      if(route.kind==='signer-session'){const guest=await dependencies.client.restoreGuest();if(!active)return;setUser({id:guest.actorId,email:guest.email,accessToken:'guest-session'});setSignerDocument(guest.documentId);return;}
+      if(route.kind==='verification'){try{const owner=await dependencies.client.restoreOwnerSession();if(active){setUser(owner);return;}}catch{}try{const guest=await dependencies.client.restoreGuest();if(active){setUser({id:guest.actorId,email:guest.email,accessToken:'guest-session'});return;}}catch{}}
+      if(route.kind==='recovery'||route.kind==='confirmation'||route.kind==='register')return;
+      try{const serverUser=await dependencies.client.restoreOwnerSession();if(active){setUser(serverUser);return;}}catch{}
+      const restored=await dependencies.auth.restore();if(restored&&active){await dependencies.client.exchangeSession(restored.accessToken);setUser(restored);}
+    }catch{if(active&&(route.kind==='signer'||route.kind==='signer-session'))setSessionMessage('La invitación expiró, ya fue utilizada o el turno todavía no está disponible.');}};void restore();const stop=dependencies.auth.subscribe?.((next,event)=>{if(!active)return;if(next&&event==='TOKEN_REFRESHED')void dependencies.client.exchangeSession(next.accessToken).then(()=>setUser(next)).catch(()=>setUser(undefined));if(!next&&event==='SIGNED_OUT'){setUser(undefined);void dependencies.client.deleteSession().catch(()=>{});}});return()=>{active=false;stop?.();};
+  },[dependencies.auth,dependencies.client,initialUser,route]);
+  const guest=user?.accessToken==='guest-session';
+  const signOut = async () => {try {if(guest)await dependencies.client.deleteGuestSession();else try{await dependencies.auth.signOut();}finally{await dependencies.client.deleteSession();}} finally {setUser(undefined);}};
   if (route.kind === 'not-found') return <div className="leapsign-app"><NotFound/></div>;
   return <div className="leapsign-app">
     <aside className="compatibility-notice" role="note"><strong>Compatibilidad inicial: certificados encadenados a BCE.</strong> Integridad criptográfica, confianza de la cadena y revocación son resultados distintos. LeapSign no declara por sí solo validez jurídica.</aside>
     {user ? <>
-      <AppHeader user={user} onSignOut={() => {void signOut();}}/>
-      {route.kind === 'signer' ? <SignerWorkspace dependencies={dependencies} user={user} token={route.token}/>
+      <AppHeader user={user} guest={guest} onSignOut={() => {void signOut();}}/>
+      {(route.kind === 'signer'||route.kind==='signer-session')&&signerDocument ? <SignerWorkspace dependencies={dependencies} user={user} token={signerDocument}/>
         : route.kind === 'tracking' ? <TrackingWorkspace dependencies={dependencies} processId={route.processId}/>
         : route.kind === 'verification' ? <VerificationWorkspace dependencies={dependencies} receiptId={route.receiptId}/>
+        : route.kind==='profile'?<ProfileWorkspace user={user}/>
+        : route.kind==='administration'?<AdministrationWorkspace client={dependencies.client}/>
+        : route.kind==='error'?<ErrorWorkspace status={route.status}/>
         : <OwnerWorkspace dependencies={dependencies}/>}
-    </> : <LoginView dependencies={dependencies} route={route} onSignedIn={setUser}/>}
+    </> : sessionMessage?<main className="not-found"><FrogTrail/><h1>Enlace de firma no disponible</h1><p role="alert">{sessionMessage}</p></main>:route.kind==='error'?<ErrorWorkspace status={route.status}/>:<LoginView dependencies={dependencies} route={route} onSignedIn={setUser}/>}
     <footer className="legal-note">La validación técnica comprueba el PDF recibido según la política publicada; no determina por sí sola la identidad, la confianza ni la validez jurídica. Para otros emisores se mostrará CHAIN_NOT_TRUSTED y el emisor detectado desde el PDF firmado; no subas el certificado por separado.</footer>
   </div>;
 }

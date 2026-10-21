@@ -1,5 +1,5 @@
 import {describe,it,expect,vi} from 'vitest';
-import {supabasePrivate} from '../server/v2/supabase-private';
+import {isDefiniteTransactionRejection,supabasePrivate} from '../server/v2/supabase-private';
 const actor='12345678-1234-4234-8234-123456789abc';
 const version='aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa';
 const path=`${actor}/versions/${version}.pdf`;
@@ -13,10 +13,12 @@ const exactId=(value:unknown)=>{
 describe('v2 private auth/storage adapters, mocked network only',()=>{
  it('explicitly rejects the v1 project',()=>expect(()=>supabasePrivate({...config,projectUrl:'https://lgsdoutarthfymbjgdrj.supabase.co'})).toThrow('V2_CONFIGURATION_REQUIRED'));
  it.each(['http://lbreydchhskrrmpzniem.supabase.co','https://evil.example','https://abcdefghijklmnopqrst.supabase.co','https://lbreydchhskrrmpzniem.supabase.co/path'])('rejects non-dedicated endpoints',projectUrl=>expect(()=>supabasePrivate({...config,projectUrl})).toThrow());
- it('verifies a cookie with the authentication server, never by decoding JWT locally',async()=>{const fetcher=vi.fn(async()=>Response.json({id:actor,email_confirmed_at:'2026-10-20',is_anonymous:false}));expect(await supabasePrivate({...config,fetch:fetcher}).authenticate(request())).toBe(actor);const [url,init]=fetcher.mock.calls[0] as unknown as [string,RequestInit];expect(url).toBe(config.projectUrl+'/auth/v1/user');expect(JSON.stringify(init)).not.toContain(config.serviceKey);});
+ it('verifies a cookie with the authentication server, never by decoding JWT locally',async()=>{const fetcher=vi.fn(async()=>Response.json({id:actor,email:'owner@example.test',email_confirmed_at:'2026-10-20',is_anonymous:false}));expect(await supabasePrivate({...config,fetch:fetcher}).authenticate(request())).toBe(actor);const [url,init]=fetcher.mock.calls[0] as unknown as [string,RequestInit];expect(url).toBe(config.projectUrl+'/auth/v1/user');expect(JSON.stringify(init)).not.toContain(config.serviceKey);});
  it('does not call the server for absent or duplicate cookies',async()=>{const fetcher=vi.fn();const adapter=supabasePrivate({...config,fetch:fetcher});expect(await adapter.authenticate(new Request('https://leapsign.app'))).toBeNull();expect(await adapter.authenticate(new Request('https://leapsign.app',{headers:{Cookie:'__Host-leapsign-v2=one; __Host-leapsign-v2=two'}}))).toBeNull();expect(fetcher).not.toHaveBeenCalled();});
  it.each([{id:actor,is_anonymous:true,email_confirmed_at:'date'},{id:actor},{id:'malformed',email_confirmed_at:'date'}])('rejects unverified/anonymous responses',async user=>expect(await supabasePrivate({...config,fetch:async()=>Response.json(user)}).authenticate(request())).toBeNull());
  it('does not disclose authentication server errors',async()=>expect(await supabasePrivate({...config,fetch:async()=>{throw Error('secret');}}).authenticate(request())).toBeNull());
+ it('uses the official Auth invite endpoint and query-bound v2 redirect',async()=>{const fetcher=vi.fn(async()=>Response.json({id:actor,email:'invited@example.test'}));await expect(supabasePrivate({...config,fetch:fetcher}).adminInvite('invited@example.test')).resolves.toBe(actor);const[target,init]=fetcher.mock.calls[0] as unknown as[string,RequestInit];expect(target).toBe(config.projectUrl+'/auth/v1/invite?redirect_to=https%3A%2F%2Fpruebas.leapsign.app%2Fconfirmar');expect(JSON.parse(String(init.body))).toEqual({email:'invited@example.test',data:{invited_by:'leapsign_v2'}});});
+ it('places recovery redirect in the provider query instead of untrusted JSON',async()=>{const fetcher=vi.fn().mockResolvedValueOnce(Response.json({id:actor,email:'owner@example.test'})).mockResolvedValueOnce(Response.json({}));await supabasePrivate({...config,fetch:fetcher}).adminRecover(actor);const[target,init]=fetcher.mock.calls[1] as unknown as[string,RequestInit];expect(target).toBe(config.projectUrl+'/auth/v1/recover?redirect_to=https%3A%2F%2Fpruebas.leapsign.app%2Frecuperar');expect(JSON.parse(String(init.body))).toEqual({email:'owner@example.test'});});
  it('calls a named RPC only with the server service role and a mandatory strict decoder',async()=>{
   const fetcher=vi.fn(async()=>Response.json({id:actor}));
   const id=await supabasePrivate({...config,fetch:fetcher}).rpc('claim_signing_intent',{p_id:actor},exactId);
@@ -34,6 +36,13 @@ describe('v2 private auth/storage adapters, mocked network only',()=>{
   const adapter=supabasePrivate({...config,fetch:async()=>Response.json({id:actor,internal:'do not expose'})});
   await expect(adapter.rpc('claim_signing_intent',{p_id:actor},exactId)).rejects.toThrow('UNAVAILABLE');
  });
+ it('distinguishes a confirmed PostgREST rollback from an ambiguous transport failure',async()=>{
+  const rejected=supabasePrivate({...config,fetch:async()=>Response.json({code:'P0001',message:'EMAIL_RATE_LIMITED',details:null,hint:null},{status:400})});
+  await expect(rejected.rpcWithDefiniteRejection('v2_create_process',{p_id:actor},exactId)).rejects.toSatisfy(isDefiniteTransactionRejection);
+  const ambiguous=supabasePrivate({...config,fetch:async()=>new Response('<html>proxy unavailable</html>',{status:503,headers:{'Content-Type':'text/html'}})});
+  await expect(ambiguous.rpcWithDefiniteRejection('v2_create_process',{p_id:actor},exactId)).rejects.not.toSatisfy(isDefiniteTransactionRejection);
+ });
+ it.each(['40003','08007','ERROR'])('never treats an uncertain or unknown provider code %s as a confirmed rollback',async code=>{const adapter=supabasePrivate({...config,fetch:async()=>Response.json({code,message:'unknown result'},{status:500})});await expect(adapter.rpcWithDefiniteRejection('v2_create_process',{p_id:actor},exactId)).rejects.not.toSatisfy(isDefiniteTransactionRejection);});
  it('rejects malformed RPC names and non-JSON responses without making data available',async()=>{
   const fetcher=vi.fn(async()=>new Response('<html>proxy</html>',{headers:{'Content-Type':'text/html'}}));
   const adapter=supabasePrivate({...config,fetch:fetcher});

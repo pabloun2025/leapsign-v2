@@ -14,7 +14,7 @@
     "not_found_handling": "none"
   },
   "observability": { "enabled": false },
-  "triggers": { "crons": ["17 */6 * * *"] },
+  "triggers": { "crons": ["17 */6 * * *", "*/5 * * * *"] },
   "vars": {
     "V2_ORIGIN": "https://pruebas.leapsign.app",
     "SUPABASE_V2_URL": "https://lbreydchhskrrmpzniem.supabase.co",

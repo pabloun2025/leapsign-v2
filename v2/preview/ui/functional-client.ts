@@ -21,6 +21,9 @@ export type Receipt =
   | {state: 'validated'; report: SignatureValidationResult}
   | {state: 'signature_intent_issued' | 'signed_pending_validation' | 'rejected' | 'expired' | 'failed'};
 export type PublicVerification={processId:string;receiptId:string;signedSha256:string;signer:string;validatedAt:string;accepted:true;checks:SignatureValidationResult['checks'];revocation:'good';legalOutcome:'not_determined_by_software'};
+export type GuestSession={actorId:string;documentId:string;email:string};
+export type AdminUser={id:string;email:string;status:'active'|'suspended'|'unconfirmed';createdAt:string;lastSignInAt:string|null};
+export type AdminAudit={id:number;administratorId:string;action:string;targetUserId:string|null;targetEmail:string|null;createdAt:string};
 
 export class FunctionalClientError extends Error {
   constructor(readonly code: 'INVALID_INPUT' | 'UNAUTHENTICATED' | 'UNAVAILABLE' | 'INVALID_RESPONSE' | 'ABORTED') {
@@ -146,6 +149,30 @@ export class FunctionalV2Client {
     const value = await this.json(await this.request('/api/v2/session', {method: 'DELETE'}, signal));
     if (!object(value) || !exact(value, ['code']) || value.code !== 'SIGNED_OUT') throw new FunctionalClientError('INVALID_RESPONSE');
   }
+  async restoreOwnerSession(signal?:AbortSignal){const value=await this.json(await this.request('/api/v2/session',{method:'GET'},signal));if(!object(value)||!exact(value,['code','id','email'])||value.code!=='SESSION'||typeof value.id!=='string'||!isProcessId(value.id)||typeof value.email!=='string'||value.email.length>254)throw new FunctionalClientError('INVALID_RESPONSE');return{id:value.id,email:value.email,accessToken:'server-session'};}
+
+  private guestSession(value:unknown,code:'GUEST_SIGNED_IN'|'GUEST_SESSION'):GuestSession{
+    if(!object(value)||!exact(value,['code','actorId','documentId','email'])||value.code!==code||typeof value.actorId!=='string'||!isProcessId(value.actorId)||typeof value.documentId!=='string'||!isProcessId(value.documentId)||typeof value.email!=='string'||value.email.length>254)return (()=>{throw new FunctionalClientError('INVALID_RESPONSE');})();
+    return{actorId:value.actorId,documentId:value.documentId,email:value.email};
+  }
+
+  async exchangeGuest(invitation:string,signal?:AbortSignal){
+    if(!/^invite_[A-Za-z0-9_-]{43}$/.test(invitation))throw new FunctionalClientError('INVALID_INPUT');
+    return this.guestSession(await this.json(await this.request('/api/v2/guest-session',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({invitation})},signal)),'GUEST_SIGNED_IN');
+  }
+
+  async restoreGuest(signal?:AbortSignal){return this.guestSession(await this.json(await this.request('/api/v2/guest-session',{method:'GET'},signal)),'GUEST_SESSION');}
+  async deleteGuestSession(signal?:AbortSignal){await this.request('/api/v2/guest-session',{method:'DELETE'},signal);}
+
+  async listAdminUsers(page=1,search='',signal?:AbortSignal){
+    if(!Number.isInteger(page)||page<1||search.length>254)throw new FunctionalClientError('INVALID_INPUT');
+    const query=new URLSearchParams({page:String(page),...(search?{search}:{})});const value=await this.json(await this.request(`/api/v2/admin/users?${query}`,{method:'GET'},signal));
+    if(!object(value)||!exact(value,['users','page','total'])||!Array.isArray(value.users)||value.page!==page||!Number.isInteger(value.total)||!value.users.every(user=>object(user)&&exact(user,['id','email','status','createdAt','lastSignInAt'])&&typeof user.id==='string'&&isProcessId(user.id)&&typeof user.email==='string'&&['active','suspended','unconfirmed'].includes(String(user.status))&&typeof user.createdAt==='string'&&(user.lastSignInAt===null||typeof user.lastSignInAt==='string')))throw new FunctionalClientError('INVALID_RESPONSE');
+    return value as {users:AdminUser[];page:number;total:number};
+  }
+  async inviteAdminUser(email:string,signal?:AbortSignal){if(email.length>254||!email.includes('@'))throw new FunctionalClientError('INVALID_INPUT');await this.request('/api/v2/admin/invitations',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({email})},signal);}
+  async adminUserAction(id:string,action:'resend'|'recover'|'suspend'|'reactivate',signal?:AbortSignal){if(!isProcessId(id))throw new FunctionalClientError('INVALID_INPUT');await this.request(`/api/v2/admin/users/${id}/${action}`,{method:'POST',headers:{'Content-Type':'application/json'},body:'{}'},signal);}
+  async listAdminAudit(page=1,signal?:AbortSignal){const value=await this.json(await this.request(`/api/v2/admin/audit?page=${page}`,{method:'GET'},signal));if(!object(value)||!exact(value,['events','page'])||value.page!==page||!Array.isArray(value.events)||!value.events.every(event=>object(event)&&exact(event,['id','administratorId','action','targetUserId','targetEmail','createdAt'])&&Number.isInteger(event.id)&&typeof event.administratorId==='string'&&typeof event.action==='string'&&typeof event.createdAt==='string'))throw new FunctionalClientError('INVALID_RESPONSE');return value.events as AdminAudit[];}
 
   async createProcess(input: {pdf: File; signers: string[]}, signal?: AbortSignal) {
     const checked = validateSignerEmails(input.signers);

@@ -1,9 +1,17 @@
+import type {SigningFlags} from '../../../src/v2/policy';
+
 export type AppRoute =
   | {kind: 'owner'}
   | {kind: 'signer'; token: string}
+  | {kind: 'signer-session'; processId: string}
   | {kind: 'tracking'; processId: string}
   | {kind:'verification';receiptId:string}
   | {kind: 'recovery'}
+  | {kind: 'register'}
+  | {kind: 'confirmation'}
+  | {kind: 'profile'}
+  | {kind: 'administration'}
+  | {kind:'error';status:401|403|503}
   | {kind: 'not-found'};
 
 const processIdPattern = /^[a-f0-9]{8}-(?:[a-f0-9]{4}-){3}[a-f0-9]{12}$/i;
@@ -16,12 +24,18 @@ export function parseAppRoute(pathname: string): AppRoute {
   const parts = decoded.split('/').filter(Boolean);
   if (parts.length === 0) return {kind: 'owner'};
   if (parts.length === 1 && parts[0] === 'recuperar') return {kind: 'recovery'};
+  if(parts.length===1&&parts[0]==='registro')return{kind:'register'};
+  if(parts.length===1&&parts[0]==='confirmar')return{kind:'confirmation'};
+  if(parts.length===1&&parts[0]==='perfil')return{kind:'profile'};
+  if(parts.length===1&&parts[0]==='administracion')return{kind:'administration'};
+  if(parts.length===1&&['401','403','503'].includes(parts[0]))return{kind:'error',status:Number(parts[0]) as 401|403|503};
   if (parts.length === 2 && parts[0] === 'procesos' && processIdPattern.test(parts[1])) {
     return {kind: 'tracking', processId: parts[1].toLowerCase()};
   }
   if (parts.length === 2 && parts[0] === 'firmar' && signerTokenPattern.test(parts[1])) {
     return {kind: 'signer', token: parts[1]};
   }
+  if(parts.length===3&&parts[0]==='firmar'&&parts[1]==='proceso'&&processIdPattern.test(parts[2]))return{kind:'signer-session',processId:parts[2].toLowerCase()};
   if(parts.length===2&&parts[0]==='verificar'&&processIdPattern.test(parts[1]))return{kind:'verification',receiptId:parts[1].toLowerCase()};
   return {kind: 'not-found'};
 }
@@ -41,9 +55,14 @@ export function validateSignerEmails(values: string[]): SignerEmailValidation {
   }
   return {ok: true, emails};
 }
-
 export function isProcessId(value: string) {
   return processIdPattern.test(value);
+}
+
+export function signingFlagsFromPublic(value:unknown):SigningFlags{
+  if(!value||typeof value!=='object'||Array.isArray(value)||Object.keys(value).sort().join(',')!=='direct,external,firmaecProfile')throw Error('INVALID_FLAGS');
+  const flags=value as Record<string,unknown>;if(['direct','external','firmaecProfile'].some(key=>typeof flags[key]!=='boolean'))throw Error('INVALID_FLAGS');
+  return{DIRECT_P12_SIGNING_ENABLED:flags.direct?'true':'false',EXTERNAL_SIGNATURE_ENABLED:flags.external?'true':'false',FIRMAEC_COMPATIBILITY_PROFILE_ENABLED:flags.firmaecProfile?'true':'false'};
 }
 
 export type ReceiptPresentation = {tone: 'pending' | 'success' | 'error' | 'neutral'; title: string; canRetry: boolean};

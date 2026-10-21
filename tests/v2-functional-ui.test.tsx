@@ -5,7 +5,7 @@ import {
   FunctionalApp, ProcessProgress, ReceiptRecovery, type FunctionalAppDependencies,
 } from '../v2/preview/ui/FunctionalApp';
 import {createSupabaseAuthPort, type SupabaseAuthClient} from '../v2/preview/ui/supabase-auth';
-import {parseAppRoute, receiptPresentation, validateSignerEmails} from '../v2/preview/ui/model';
+import {parseAppRoute, receiptPresentation,signingFlagsFromPublic, validateSignerEmails} from '../v2/preview/ui/model';
 import {acceptedReport} from './helpers/validation-report';
 
 const origin = 'https://pruebas.leapsign.app';
@@ -96,11 +96,17 @@ describe('v2 functional UI transport', () => {
 });
 
 describe('v2 functional routes and validation', () => {
+  it('maps public boolean flags into the canonical signing policy shape',()=>{expect(signingFlagsFromPublic({direct:true,external:true,firmaecProfile:true})).toEqual({DIRECT_P12_SIGNING_ENABLED:'true',EXTERNAL_SIGNATURE_ENABLED:'true',FIRMAEC_COMPATIBILITY_PROFILE_ENABLED:'true'});expect(()=>signingFlagsFromPublic({direct:'true',external:true,firmaecProfile:true})).toThrow();});
   it('routes owner, tracking, recovery and token-bound signer views', () => {
     expect(parseAppRoute('/')).toEqual({kind: 'owner'});
     expect(parseAppRoute(`/procesos/${processId}`)).toEqual({kind: 'tracking', processId});
     expect(parseAppRoute(`/firmar/${processId}`)).toEqual({kind: 'signer', token: processId});
     expect(parseAppRoute('/recuperar')).toEqual({kind: 'recovery'});
+    expect(parseAppRoute('/registro')).toEqual({kind:'register'});
+    expect(parseAppRoute('/confirmar')).toEqual({kind:'confirmation'});
+    expect(parseAppRoute('/perfil')).toEqual({kind:'profile'});
+    expect(parseAppRoute('/administracion')).toEqual({kind:'administration'});
+    expect(parseAppRoute(`/firmar/proceso/${processId}`)).toEqual({kind:'signer-session',processId});
     expect(parseAppRoute('/firmar/../../private')).toEqual({kind: 'not-found'});
     expect(parseAppRoute(`/verificar/${intentId}`)).toEqual({kind:'verification',receiptId:intentId});
   });
@@ -151,7 +157,7 @@ describe('v2 ephemeral Supabase Auth adapter', () => {
       id: 'actor', email: 'ana@example.test', accessToken: 'a'.repeat(40),
     });
     expect(factory).toHaveBeenCalledWith('https://v2.supabase.co', 'public-key', {auth: {
-      persistSession: false, autoRefreshToken: false, detectSessionInUrl: true,
+      persistSession: false, autoRefreshToken: true, detectSessionInUrl: true,
     }});
   });
 
@@ -168,9 +174,9 @@ describe('v2 ephemeral Supabase Auth adapter', () => {
 
     await auth.sendRecovery('ana@example.test', origin + '/recuperar');
     await expect(auth.hasRecoverySession()).resolves.toBe(true);
-    await auth.updatePassword('new-password-with-length');
+    await auth.updatePassword('New-password-with-length-2');
     expect(client.auth.resetPasswordForEmail).toHaveBeenCalledWith('ana@example.test', {redirectTo: origin + '/recuperar'});
-    expect(client.auth.updateUser).toHaveBeenCalledWith({password: 'new-password-with-length'});
+    expect(client.auth.updateUser).toHaveBeenCalledWith({password: 'New-password-with-length-2'});
   });
 });
 
@@ -190,6 +196,8 @@ describe('v2 functional app shell', () => {
     expect(html).toMatch(/auto[Cc]omplete="email"/);
     expect(html).not.toMatch(/laboratorio|datos ficticios/i);
   });
+
+  it('renders owner registration and protected administration in the approved shell',()=>{const registration=renderToStaticMarkup(<FunctionalApp dependencies={dependencies} route={{kind:'register'}}/>);expect(registration).toContain('Crea tu cuenta');expect(registration).toContain('name="first-name"');expect(registration).toContain('minLength="12"');const administration=renderToStaticMarkup(<FunctionalApp dependencies={dependencies} route={{kind:'administration'}} initialUser={{id:'actor',email:'admin@example.test',accessToken:'memory-only'}}/>);expect(administration).toContain('Administración de usuarios');expect(administration).toContain('Invitar por correo');expect(administration).toContain('Auditoría administrativa');expect(administration).not.toMatch(/establecer contraseñas de otros/i);});
 
   it('keeps the token-bound destination and frog-over-PDF identity visible before login', () => {
     const html = renderToStaticMarkup(<FunctionalApp dependencies={dependencies} route={{kind: 'signer', token: processId}}/>);

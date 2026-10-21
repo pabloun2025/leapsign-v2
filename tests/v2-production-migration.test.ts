@@ -36,3 +36,8 @@ describe('v2 QR verification migration',()=>{
     expect(sql).toContain('revoke all on function public.v2_get_verification(uuid,uuid) from public,anon,authenticated,service_role');
   });
 });
+
+describe('v2 guest access and transactional email migration',()=>{
+ it('keeps opaque guest sessions and outbox tables behind the service boundary',()=>{const sql=readFileSync('v2/migrations/007_accounts_guests_email.sql','utf8');for(const token of ['signer_invitations','guest_sessions','email_outbox','email_suppressions','admin_audit','skip locked','dead_letter','v2_exchange_guest_invitation','v2_resolve_guest_session','v2_enqueue_email_reminders'])expect(sql).toContain(token);expect(sql).toContain('revoke all on all tables in schema signing_v2 from public,anon,authenticated,service_role');expect(sql).not.toMatch(/grant\s+(?:select|insert|update|delete)\s+on[\s\S]*?to\s+(?:anon|authenticated)/i);});
+ it('atomically limits invitation email volume by user, process, recipient and anonymized IP',()=>{const sql=readFileSync('v2/migrations/007_accounts_guests_email.sql','utf8');for(const token of ['email_rate_budgets','reserve_email_budget',"'user'","'process'","'recipient'","'ip'",'p_client_ip_hash','EMAIL_RATE_LIMITED','on conflict(scope,scope_hash,window_start) do update'])expect(sql).toContain(token);expect(sql).toMatch(/p_client_ip_hash!~'\^\[a-f0-9\]\{64\}\$'/);});
+});

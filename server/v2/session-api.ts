@@ -5,6 +5,7 @@
  */
 export interface SessionDependencies {
   verifyAccessToken(token: string, signal: AbortSignal): Promise<string | null>;
+  resolveSession?(request:Request,signal:AbortSignal):Promise<{id:string;email:string}|null>;
 }
 
 const securityHeaders = {
@@ -59,6 +60,11 @@ export function createSessionHandler(deps: SessionDependencies, origin: string) 
   return async (request: Request): Promise<Response> => {
     const url = new URL(request.url);
     if (url.origin !== origin || url.search || url.pathname !== '/api/v2/session') return response('NOT_FOUND', 404);
+    if(request.method==='GET'){
+      if(request.headers.get('X-LeapSign-Client')!=='v2')return response('FORBIDDEN',403);
+      const user=await deps.resolveSession?.(request,AbortSignal.any([request.signal,AbortSignal.timeout(5_000)]));
+      return user?new Response(JSON.stringify({code:'SESSION',id:user.id,email:user.email}),{headers:securityHeaders}):response('UNAUTHENTICATED',401);
+    }
     if (request.method === 'DELETE') {
       if (request.headers.get('Origin') !== origin || request.headers.get('X-LeapSign-Client') !== 'v2') return response('FORBIDDEN', 403);
       return response('SIGNED_OUT', 200, {'Set-Cookie': '__Host-leapsign-v2=; Path=/; Secure; HttpOnly; SameSite=Strict; Max-Age=0'});

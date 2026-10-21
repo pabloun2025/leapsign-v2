@@ -32,4 +32,5 @@ describe('v2 session boundary', () => {
     const result = await handler(new Request(origin + '/api/v2/session', {method: 'DELETE', headers: {Origin: origin, 'X-LeapSign-Client': 'v2'}}));
     expect(result.status).toBe(200); expect(result.headers.get('Set-Cookie')).toContain('Max-Age=0');
   });
+  it('restores only public owner identity from an already verified cookie',async()=>{const handler=createSessionHandler({verifyAccessToken:async()=>null,resolveSession:async()=>({id:'11111111-1111-4111-8111-111111111111',email:'owner@example.test'})},origin);const result=await handler(new Request(origin+'/api/v2/session',{headers:{'X-LeapSign-Client':'v2'}}));expect(result.status).toBe(200);expect(await result.json()).toEqual({code:'SESSION',id:'11111111-1111-4111-8111-111111111111',email:'owner@example.test'});});
 });

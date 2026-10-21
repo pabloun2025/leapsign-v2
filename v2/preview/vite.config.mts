@@ -7,7 +7,9 @@ export default defineConfig({
   root: fileURLToPath(new URL('./ui/', import.meta.url)),
   envDir: false,
   envPrefix: 'LEAPSIGN_PREVIEW_PUBLIC_',
-  publicDir: false,
+  // Package the approved, repository-owned v1 brand assets into the isolated
+  // v2 output. The source directory remains read-only and v1 is not rebuilt.
+  publicDir: fileURLToPath(new URL('../../public/', import.meta.url)),
   build: {
     outDir: fileURLToPath(new URL('./dist/', import.meta.url)),
     emptyOutDir: true,

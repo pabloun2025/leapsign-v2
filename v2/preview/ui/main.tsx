@@ -1,16 +1,16 @@
 import {StrictMode} from 'react';
 import {createRoot} from 'react-dom/client';
 import {signWithLocalEngine} from '../../../src/v2/local-session';
-import type {SigningFlags} from '../../../src/v2/policy';
 import {FunctionalApp} from './FunctionalApp';
 import {FunctionalV2Client} from './functional-client';
-import {parseAppRoute} from './model';
+import {parseAppRoute,signingFlagsFromPublic} from './model';
 import {createSupabaseAuthPort} from './supabase-auth';
+import frogBrand from '../../../public/frog-brand.webp?url';
 import './functional.css';
 
-type PublicConfig={origin:string;supabaseUrl:string;publishableKey:string;flags:SigningFlags};
+type PublicConfig={origin:string;supabaseUrl:string;publishableKey:string;flags:unknown};
 const root=createRoot(document.getElementById('root')!);
-const failed=()=>root.render(<main className="boot-error"><span aria-hidden="true">🐸</span><h1>LeapSign no está disponible</h1><p>No se pudo cargar la configuración segura de v2. Inténtalo de nuevo más tarde.</p></main>);
+const failed=()=>root.render(<main className="boot-error"><img className="frog-hop" src={frogBrand} alt=""/><h1>LeapSign no está disponible</h1><p>No se pudo cargar la configuración segura de v2. Inténtalo de nuevo más tarde.</p></main>);
 
 async function start(){
  try{
@@ -20,7 +20,7 @@ async function start(){
   if(!value||typeof value!=='object'||Array.isArray(value)||Object.keys(value).sort().join(',')!=='flags,origin,publishableKey,supabaseUrl')throw Error();
   const config=value as PublicConfig;
   if(config.origin!==location.origin||config.supabaseUrl!=='https://lbreydchhskrrmpzniem.supabase.co'||typeof config.publishableKey!=='string'||!config.publishableKey||!config.flags||typeof config.flags!=='object')throw Error();
-  const dependencies={origin:config.origin,client:new FunctionalV2Client({origin:config.origin}),auth:createSupabaseAuthPort({url:config.supabaseUrl,publishableKey:config.publishableKey}),localSigner:signWithLocalEngine,signingFlags:config.flags};
+  const dependencies={origin:config.origin,client:new FunctionalV2Client({origin:config.origin}),auth:createSupabaseAuthPort({url:config.supabaseUrl,publishableKey:config.publishableKey}),localSigner:signWithLocalEngine,signingFlags:signingFlagsFromPublic(config.flags)};
   root.render(<StrictMode><FunctionalApp dependencies={dependencies} route={parseAppRoute(location.pathname)}/></StrictMode>);
  }catch{failed();}
 }

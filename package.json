@@ -8,6 +8,7 @@
     "dev": "vite --config v2/preview/vite.config.mts",
     "build": "tsc -b && vite build --config v2/preview/vite.config.mts",
     "test": "vitest run",
+    "test:v2-email-budgets-db": "node scripts/test-v2-email-budgets-db.mjs",
     "test:watch": "vitest",
     "build:preview-package": "node scripts/build-v2-preview.mjs"
   },

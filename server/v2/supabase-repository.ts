@@ -1,9 +1,10 @@
-import {createHash,randomUUID} from 'node:crypto';
+import {createHash,randomBytes,randomUUID} from 'node:crypto';
 import type {SigningIntent,SignatureValidationResult} from '../../src/v2/contracts';
 import type {CanonicalStage} from './intents';
 import type {PreparedPdf} from './private-validator';
+import {isDefiniteTransactionRejection,type StagedPrivateObject} from './supabase-private';
 
-type Database={rpc<T>(name:string,args:Record<string,unknown>,decode:(value:unknown)=>T):Promise<T>;writePrivateObject(path:string,pdf:Uint8Array):Promise<void>;readPrivateObject(path:string,maxBytes:number):Promise<Uint8Array>};
+type Database={rpc<T>(name:string,args:Record<string,unknown>,decode:(value:unknown)=>T):Promise<T>;rpcWithDefiniteRejection<T>(name:string,args:Record<string,unknown>,decode:(value:unknown)=>T):Promise<T>;stagePrivateObject(path:string,pdf:Uint8Array):Promise<StagedPrivateObject>;readPrivateObject(path:string,maxBytes:number):Promise<Uint8Array>};
 type Validator={prepare(pdf:Uint8Array):Promise<PreparedPdf>};
 const unavailable=()=>Error('UNAVAILABLE');
 const object=(value:unknown):value is Record<string,unknown>=>!!value&&typeof value==='object'&&!Array.isArray(value);
@@ -12,6 +13,7 @@ const hash=(value:unknown):value is string=>typeof value==='string'&&/^[a-f0-9]{
 const filename=(value:unknown):value is string=>typeof value==='string'&&/^[^\r\n/\\]{1,124}\.pdf$/i.test(value);
 const storage=(value:unknown):value is string=>typeof value==='string'&&/^[a-f0-9-]{36}\/versions\/[a-f0-9-]{36}\.pdf$/i.test(value);
 const digest=(value:Uint8Array|string)=>createHash('sha256').update(value).digest('hex');
+const invitationToken=()=>`invite_${randomBytes(32).toString('base64url')}`;
 
 function publicProcess(value:unknown){
  if(!object(value)||!uuid(value.id)||!filename(value.filename)||value.status!=='ready_for_signer'||!Number.isInteger(value.signerCount))throw unavailable();
@@ -36,11 +38,13 @@ export function createSupabaseRepositories(database:Database,validator:Validator
  const versions=new Map<string,{path:string;bytes:number;hash:string}>();
  return{
   async reserve(actor:string,operation:string){await database.rpc('v2_reserve_operation',{p_actor_id:actor,p_operation:operation},value=>{if(!object(value)||value.reserved!==true)throw unavailable();return true;});},
-  async create(input:{ownerId:string;filename:string;pdf:Uint8Array;signers:string[]}){
+  async create(input:{ownerId:string;clientIpHash:string;filename:string;pdf:Uint8Array;signers:string[]}){
    const prepared=await validator.prepare(input.pdf);if(prepared.signatureCount+input.signers.length>20)throw unavailable();
    const documentId=randomUUID(),versionId=randomUUID(),path=`${documentId}/versions/${versionId}.pdf`;
-   await database.writePrivateObject(path,prepared.pdf);
-   return database.rpc('v2_create_process',{p_owner_id:input.ownerId,p_document_id:documentId,p_version_id:versionId,p_filename:input.filename,p_sha256:prepared.sha256,p_byte_size:prepared.byteSize,p_page_count:prepared.pageCount,p_last_page_width:prepared.lastPageWidth,p_last_page_height:prepared.lastPageHeight,p_existing_signature_count:prepared.signatureCount,p_signer_emails:input.signers},publicProcess);
+   const staged=await database.stagePrivateObject(path,prepared.pdf);
+   const invitationTokens=input.signers.map(()=>invitationToken());
+   try{return await database.rpcWithDefiniteRejection('v2_create_process',{p_owner_id:input.ownerId,p_client_ip_hash:input.clientIpHash,p_document_id:documentId,p_version_id:versionId,p_filename:input.filename,p_sha256:prepared.sha256,p_byte_size:prepared.byteSize,p_page_count:prepared.pageCount,p_last_page_width:prepared.lastPageWidth,p_last_page_height:prepared.lastPageHeight,p_existing_signature_count:prepared.signatureCount,p_signer_emails:input.signers,p_invitation_tokens:invitationTokens},publicProcess);}
+   catch(error){if(isDefiniteTransactionRejection(error))await staged.cleanupAfterDefiniteRejection();throw unavailable();}
   },
   status(documentId:string,actor:string){return database.rpc('v2_get_process_status',{p_document_id:documentId,p_actor_id:actor},value=>value as never);},
   finalize(documentId:string,actor:string){return database.rpc('v2_finalize_process',{p_document_id:documentId,p_actor_id:actor},value=>value as never);},
