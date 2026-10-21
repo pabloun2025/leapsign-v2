@@ -23,7 +23,11 @@ Esto significa compatibilidad técnica limitada, no acreditación ni conclusión
 jurídica. Una firma solo puede aceptarse si además hay evidencia vigente y
 firmada sobre la revocación del certificado final. La CRL incluida acredita el
 estado de la intermedia; no sustituye la CRL/OCSP correspondiente a cada
-certificado final. Si esa evidencia no está disponible el resultado es
+certificado final. Para los certificados finales se incorpora además la CRL
+combinada que el código oficial FirmaEC identifica como `BCE_CRL`; su vigencia
+es diaria y debe renovarse mediante revisión, nueva fijación de hash, pruebas y
+despliegue antes de `nextUpdate` (2026-10-22 02:03:33 UTC). No se descarga ni se
+reemplaza silenciosamente durante una validación. Si la evidencia aplicable no está disponible el resultado es
 `REVOCATION_UNAVAILABLE` y no se acepta.
 
 FirmaEC también contiene adaptadores/material para `alphatechnologies`, `anfac`,

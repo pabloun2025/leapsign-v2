@@ -44,8 +44,10 @@ def sample(request):
             cert_registry=registry)
         return signer, cert
 
-    def revocations(serial=None):
-        builder = x509.CertificateRevocationListBuilder().issuer_name(ca_name).last_update(now - timedelta(minutes=1)).next_update(now + timedelta(hours=1))
+    def revocations(serial=None, *, stale=False):
+        builder = (x509.CertificateRevocationListBuilder().issuer_name(ca_name)
+                   .last_update(now - timedelta(days=2) if stale else now - timedelta(minutes=1))
+                   .next_update(now - timedelta(days=1) if stale else now + timedelta(hours=1)))
         if serial:
             builder = builder.add_revoked_certificate(x509.RevokedCertificateBuilder().serial_number(serial).revocation_date(now - timedelta(minutes=1)).build())
         return builder.sign(ca_key, hashes.SHA256()).public_bytes(serialization.Encoding.DER)
@@ -83,7 +85,19 @@ def validate(sample, previous=None, candidate=None, **kwargs):
 
 def test_real_pades_signature(sample):
     result = validate(sample)
-    assert result["valid"] and result["signatureCount"] == 1
+    assert result["valid"] and result["accepted"] and result["signatureCount"] == 1
+    assert result["checks"] == {
+        "cryptographicIntegrity": "passed",
+        "cmsSignature": "passed",
+        "documentMatch": "passed",
+        "oneNewSignature": "passed",
+        "previousSignatures": "passed",
+        "chainBuilt": "passed",
+        "trusted": "passed",
+        "certificateValidity": "passed",
+        "revocation": "good",
+    }
+    assert result["legalOutcome"] == "not_determined_by_software"
     assert result["certificate"]["fingerprint"] == sha256(sample["cert"].public_bytes(serialization.Encoding.DER)).hexdigest()
     assert set(result["certificate"]) == {"subject", "issuer", "serial", "fingerprint", "notBefore", "notAfter"}
 
@@ -117,12 +131,12 @@ def test_missing_trust_fails_closed(sample):
 
 
 def test_missing_revocation_fails_closed(sample):
-    with pytest.raises(ValidationFailure, match="TRUST_POLICY_REQUIRED"):
+    with pytest.raises(ValidationFailure, match="REVOCATION_UNAVAILABLE"):
         validate(sample, crls=[])
 
 
 def test_revoked_certificate(sample):
-    with pytest.raises(ValidationFailure):
+    with pytest.raises(ValidationFailure, match="CERTIFICATE_REVOKED"):
         validate(sample, crls=[sample["crl"](sample["cert"].serial_number)])
 
 
@@ -130,8 +144,13 @@ def test_revoked_certificate(sample):
 def test_expired_or_unsuitable_certificate(sample, options):
     signer, _ = sample["identity"](**options)
     candidate = sample["sign"](sample["base"], signer=signer)
-    with pytest.raises(ValidationFailure):
+    with pytest.raises(ValidationFailure, match="CERTIFICATE_NOT_VALID" if options.get("expired") else "CERTIFICATE_CONSTRAINTS_FAILED"):
         validate(sample, candidate=candidate)
+
+
+def test_invalid_revocation_evidence_is_distinct(sample):
+    with pytest.raises(ValidationFailure, match="REVOCATION_EVIDENCE_INVALID"):
+        validate(sample, crls=[b"not-a-crl"])
 
 
 def test_identity_pin(sample):

@@ -21,7 +21,56 @@ MAX_BYTES = 10 * 1024 * 1024
 
 
 class ValidationFailure(Exception):
-    pass
+    def __init__(self, code: str):
+        self.code = code
+        super().__init__(code)
+
+
+_CHECK_NAMES = ("cryptographicIntegrity", "cmsSignature", "documentMatch",
+                "oneNewSignature", "previousSignatures", "chainBuilt",
+                "trusted", "certificateValidity", "revocation")
+
+
+def rejection_report(error: ValidationFailure, *, policy=POLICY):
+    checks = {name: "not_evaluated" for name in _CHECK_NAMES}
+    code = error.code
+    passed = []
+    if code == "DOCUMENT_MISMATCH":
+        checks["documentMatch"] = "failed"
+    elif code == "ONE_NEW_SIGNATURE_REQUIRED":
+        passed = ["documentMatch"]
+        checks["oneNewSignature"] = "failed"
+    elif code in ("CONTENT_CHANGED", "UNSIGNED_TRAILING_CONTENT", "UNAUTHORIZED_FORM_CHANGES"):
+        passed = ["documentMatch", "oneNewSignature"]
+        checks["cryptographicIntegrity"] = "failed"
+    elif code == "PREVIOUS_SIGNATURE_CHANGED":
+        passed = ["documentMatch", "oneNewSignature"]
+        checks["previousSignatures"] = "failed"
+    elif code in ("CMS_SIGNATURE_INVALID", "CRYPTOGRAPHIC_VALIDATION_FAILED"):
+        passed = ["documentMatch", "oneNewSignature", "previousSignatures"]
+        checks["cryptographicIntegrity"] = checks["cmsSignature"] = "failed"
+    elif code == "CHAIN_NOT_TRUSTED":
+        passed = ["cryptographicIntegrity", "cmsSignature", "documentMatch", "oneNewSignature", "previousSignatures"]
+        checks["chainBuilt"] = checks["trusted"] = "failed"
+        checks["revocation"] = "unavailable"
+    elif code == "CERTIFICATE_NOT_VALID":
+        passed = ["cryptographicIntegrity", "cmsSignature", "documentMatch", "oneNewSignature", "previousSignatures", "chainBuilt"]
+        checks["trusted"] = checks["certificateValidity"] = "failed"
+    elif code == "CERTIFICATE_CONSTRAINTS_FAILED":
+        passed = ["cryptographicIntegrity", "cmsSignature", "documentMatch", "oneNewSignature", "previousSignatures", "chainBuilt", "certificateValidity"]
+        checks["trusted"] = "failed"
+    elif code == "CERTIFICATE_REVOKED":
+        passed = ["cryptographicIntegrity", "cmsSignature", "documentMatch", "oneNewSignature", "previousSignatures", "chainBuilt", "certificateValidity"]
+        checks["trusted"] = "failed"
+        checks["revocation"] = "revoked"
+    elif code in ("REVOCATION_UNAVAILABLE", "REVOCATION_EVIDENCE_INVALID"):
+        passed = ["cryptographicIntegrity", "cmsSignature", "documentMatch", "oneNewSignature", "previousSignatures", "chainBuilt", "certificateValidity"]
+        checks["trusted"] = "failed"
+        checks["revocation"] = "unavailable" if code == "REVOCATION_UNAVAILABLE" else "unknown"
+    for name in passed:
+        checks[name] = "passed"
+    return {"accepted": False, "valid": False, "policy": policy, "error": code,
+            "checks": checks, "legalOutcome": "not_determined_by_software"}
 
 
 def require_passive_pdf(reader):
@@ -144,14 +193,17 @@ def prepare_document(pdf: bytes) -> dict:
 def validate_pair(previous: bytes, candidate: bytes, *, base_sha256: str,
                   trust_roots: list[bytes], crls: list[bytes], ocsps: list[bytes] | None = None,
                   intermediates: list[bytes] | None = None,
-                  expected_fingerprint: str | None = None, position: dict | None = None) -> dict:
+                  expected_fingerprint: str | None = None, position: dict | None = None,
+                  policy_id: str = POLICY) -> dict:
     """No positive result without independent CMS, trust, revocation and diff checks.
 
     Times are evaluated at server receipt, not the untrusted claimed signing
     time. No qualified-signature, trusted-time or legal-validity claim is made.
     """
-    if not trust_roots or not (crls or ocsps):
+    if not trust_roots:
         raise ValidationFailure("TRUST_POLICY_REQUIRED")
+    if not (crls or ocsps):
+        raise ValidationFailure("REVOCATION_UNAVAILABLE")
     if (not previous.startswith(b"%PDF-") or not candidate.startswith(b"%PDF-")
             or not 0 < len(previous) < len(candidate) <= MAX_BYTES
             or sha256(previous).hexdigest() != base_sha256
@@ -184,15 +236,37 @@ def validate_pair(previous: bytes, candidate: bytes, *, base_sha256: str,
             if original.sig_object.raw_get("/Contents") != retained.sig_object.raw_get("/Contents") or list(original.byte_range) != list(retained.byte_range):
                 raise ValidationFailure("PREVIOUS_SIGNATURE_CHANGED")
         roots = [x509.Certificate.load(value) for value in trust_roots]
-        revocations = [crl.CertificateList.load(value) for value in crls]
-        responses = [ocsp.OCSPResponse.load(value) for value in (ocsps or [])]
+        others = [x509.Certificate.load(value) for value in (intermediates or [])]
+        try:
+            revocations = [crl.CertificateList.load(value) for value in crls]
+            responses = [ocsp.OCSPResponse.load(value) for value in (ocsps or [])]
+        except Exception:
+            raise ValidationFailure("REVOCATION_EVIDENCE_INVALID") from None
         for signature in signatures:
+            certificate = signature.signer_cert
+            now = datetime.now(timezone.utc)
+            if not certificate.not_valid_before <= now <= certificate.not_valid_after:
+                raise ValidationFailure("CERTIFICATE_NOT_VALID")
             context = ValidationContext(trust_roots=roots, crls=revocations, ocsps=responses,
+                                        other_certs=others,
                                         allow_fetching=False, revocation_mode="require",
-                                        moment=datetime.now(timezone.utc))
+                                        moment=now)
             status = validate_pdf_signature(signature, signer_validation_context=context)
-            if not (status.intact and status.valid and status.trusted and status.bottom_line):
-                raise ValidationFailure("CRYPTOGRAPHIC_VALIDATION_FAILED")
+            if not status.intact or not status.valid:
+                raise ValidationFailure("CMS_SIGNATURE_INVALID")
+            problem = getattr(status.trust_problem_indic, "standard_name", "")
+            if status.revoked or problem in ("REVOKED", "REVOKED_NO_POE", "REVOKED_CA_NO_POE"):
+                raise ValidationFailure("CERTIFICATE_REVOKED")
+            if problem in ("EXPIRED", "NOT_YET_VALID", "OUT_OF_BOUNDS_NO_POE", "OUT_OF_BOUNDS_NOT_REVOKED"):
+                raise ValidationFailure("CERTIFICATE_NOT_VALID")
+            if problem in ("SIG_CONSTRAINTS_FAILURE", "CHAIN_CONSTRAINTS_FAILURE", "CRYPTO_CONSTRAINTS_FAILURE"):
+                raise ValidationFailure("CERTIFICATE_CONSTRAINTS_FAILED")
+            if status.validation_path is None:
+                raise ValidationFailure("CHAIN_NOT_TRUSTED")
+            if problem in ("TRY_LATER", "REVOCATION_OUT_OF_BOUNDS_NO_POE", "NO_POE"):
+                raise ValidationFailure("REVOCATION_UNAVAILABLE")
+            if not status.trusted or not status.bottom_line:
+                raise ValidationFailure("CHAIN_NOT_TRUSTED")
             if status.modification_level is not None and status.modification_level > ModificationLevel.FORM_FILLING:
                 raise ValidationFailure("CONTENT_CHANGED")
         newest = signatures[-1]
@@ -218,9 +292,15 @@ def validate_pair(previous: bytes, candidate: bytes, *, base_sha256: str,
                     matching = True
             if not matching:
                 raise ValidationFailure("SIGNATURE_POSITION_MISMATCH")
-        return {"valid": True, "policy": POLICY, "baseSha256": base_sha256,
+        return {"accepted": True, "valid": True, "policy": policy_id, "baseSha256": base_sha256,
                 "signedSha256": sha256(candidate).hexdigest(), "previousSignatureCount": len(old),
                 "signatureCount": len(signatures), "revocation": "good",
+                "checks": {"cryptographicIntegrity": "passed", "cmsSignature": "passed",
+                           "documentMatch": "passed", "oneNewSignature": "passed",
+                           "previousSignatures": "passed", "chainBuilt": "passed",
+                           "trusted": "passed", "certificateValidity": "passed",
+                           "revocation": "good"},
+                "legalOutcome": "not_determined_by_software",
                 "certificate": {"subject": cert.subject.human_friendly, "issuer": cert.issuer.human_friendly,
                                 "serial": str(cert.serial_number), "fingerprint": fingerprint,
                                 "notBefore": cert.not_valid_before.isoformat(), "notAfter": cert.not_valid_after.isoformat()}}

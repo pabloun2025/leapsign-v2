@@ -5,6 +5,7 @@ import base64
 import json
 import pytest
 from hashlib import sha256
+from pathlib import Path
 
 
 def write_test_policy(path, root, crl):
@@ -80,7 +81,9 @@ def test_certificate_or_password_fields_are_rejected(monkeypatch):
     monkeypatch.setenv("V2_TRUST_POLICY_FILE", "/nonexistent/test-policy.json")
     with TestClient(app) as client:
         response = client.post("/validate", json={"password": "synthetic-test-only"}, headers={"Authorization": "Bearer " + "x" * 32})
-        assert response.json() == {"valid": False, "error": "INVALID_REQUEST"}
+        assert response.json()["valid"] is False
+        assert response.json()["accepted"] is False
+        assert response.json()["error"] == "INVALID_REQUEST"
         assert "synthetic-test-only" not in response.text
 
 
@@ -137,7 +140,9 @@ def test_private_prepare_rejects_certificate_and_password_fields(sample, monkeyp
     monkeypatch.setenv("V2_TRUST_POLICY_FILE", str(policy))
     with TestClient(app) as client:
         result = client.post("/prepare", json={"pdf": "JVBERi0=", "password": "never"}, headers={"Authorization": "Bearer " + "x" * 32})
-        assert result.json() == {"valid": False, "error": "INVALID_REQUEST"}
+        assert result.json()["valid"] is False
+        assert result.json()["accepted"] is False
+        assert result.json()["error"] == "INVALID_REQUEST"
         assert "never" not in result.text
 
 
@@ -162,3 +167,33 @@ def test_ready_verifies_policy_hashes(sample, monkeypatch, tmp_path):
         response = client.get("/ready")
         assert response.status_code == 503
         assert response.json() == {"detail": "VALIDATOR_NOT_READY"}
+
+
+def test_ready_rejects_stale_revocation_material(sample, monkeypatch, tmp_path):
+    policy = write_test_policy(tmp_path, sample["roots"][0], sample["crl"](stale=True))
+    monkeypatch.setenv("V2_TRUST_POLICY_FILE", str(policy))
+    with TestClient(app) as client:
+        response = client.get("/ready")
+    assert response.status_code == 503
+    assert response.json() == {"detail": "VALIDATOR_NOT_READY"}
+
+
+def test_production_policy_rejects_synthetic_chain_with_structured_report(sample, monkeypatch):
+    monkeypatch.setenv("EXTERNAL_SIGNATURE_ENABLED", "true")
+    monkeypatch.setenv("FIRMAEC_COMPATIBILITY_PROFILE_ENABLED", "true")
+    monkeypatch.setenv("V2_VALIDATOR_TOKEN", "x" * 32)
+    monkeypatch.setenv("V2_TRUST_POLICY_FILE", str(Path(__file__).parents[1] / "trust" / "policy.json"))
+    payload = {
+        "previous": base64.b64encode(sample["base"]).decode(),
+        "candidate": base64.b64encode(sample["first"]).decode(),
+        "baseSha256": sha256(sample["base"]).hexdigest(),
+        "position": {"page": 2, "x": 320, "y": 20, "width": 250, "height": 80},
+    }
+    with TestClient(app) as client:
+        report = client.post("/validate", json=payload, headers={"Authorization": "Bearer " + "x" * 32}).json()
+    assert report["accepted"] is False and report["valid"] is False
+    assert report["policy"] == "leapsign-v2-ecuador-strict-1"
+    assert report["error"] == "CHAIN_NOT_TRUSTED"
+    assert report["checks"]["trusted"] == "failed"
+    assert report["checks"]["cryptographicIntegrity"] == "passed"
+    assert report["legalOutcome"] == "not_determined_by_software"

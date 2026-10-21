@@ -5,6 +5,7 @@ Every referenced byte is local, bounded and pinned by SHA-256.
 """
 from hashlib import sha256
 import json
+from datetime import datetime, timezone
 from pathlib import Path
 
 from asn1crypto import crl, ocsp, x509
@@ -81,7 +82,16 @@ def load_policy(manifest_path: str | Path):
             entries = authority.get(source_name)
             if not isinstance(entries, list) or len(entries) > 16 or (source_name == "trustAnchors" and not entries):
                 raise PolicyFailure("TRUST_POLICY_REQUIRED")
-            result[target_name].extend(_material(manifest.parent, entry, parser) for entry in entries)
+            values = [_material(manifest.parent, entry, parser) for entry in entries]
+            if source_name == "revocation":
+                now = datetime.now(timezone.utc)
+                for value in values:
+                    parsed = crl.CertificateList.load(value)["tbs_cert_list"]
+                    this_update = parsed["this_update"].native
+                    next_update = parsed["next_update"].native
+                    if next_update is None or not this_update <= now <= next_update:
+                        raise PolicyFailure("TRUST_POLICY_REQUIRED")
+            result[target_name].extend(values)
         responses = authority.get("ocsps", [])
         if not isinstance(responses, list) or len(responses) > 16:
             raise PolicyFailure("TRUST_POLICY_REQUIRED")

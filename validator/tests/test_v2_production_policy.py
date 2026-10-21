@@ -81,3 +81,16 @@ def test_bce_chain_and_crl_are_well_formed_current_and_signed():
     )
     assert crl_entry["url"] == "https://www.eci.bce.ec/CRL/cacrl.crl"
     assert authority["revocationHosts"] == ["www.eci.bce.ec"]
+
+    assert len(authority["revocation"]) == 2
+    leaf_crl_entry = authority["revocation"][1]
+    leaf_crl = x509.load_der_x509_crl(_material(leaf_crl_entry))
+    assert leaf_crl.issuer == intermediate.subject
+    assert leaf_crl.last_update_utc <= now <= leaf_crl.next_update_utc
+    intermediate.public_key().verify(
+        leaf_crl.signature,
+        leaf_crl.tbs_certlist_bytes,
+        padding.PKCS1v15(),
+        leaf_crl.signature_hash_algorithm,
+    )
+    assert leaf_crl_entry["url"] == "https://www.eci.bce.ec/CRL/eci_bce_ec_crlfilecomb.crl"
