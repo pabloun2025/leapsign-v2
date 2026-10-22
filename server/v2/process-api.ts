@@ -7,7 +7,7 @@ export interface ProcessDependencies{
  authenticate(request:Request):Promise<string|null>;
  clientRateKey(request:Request):Promise<string>;
  reserve(actor:string,operation:'create'|'status'|'download'|'finalize'):Promise<void>;
- create(input:{ownerId:string;clientIpHash:string;filename:string;pdf:Uint8Array;signers:string[]}):Promise<PublicProcess>;
+ create(input:{ownerId:string;clientIpHash:string;filename:string;pdf:Uint8Array;signers:string[];mode?:'directed'|'open_queue';message?:string;expectedSignatures?:number|null;accessSecretHash?:string|null}):Promise<PublicProcess>;
  status(documentId:string,actor:string):Promise<ProcessStatus>;
  download(documentId:string,actor:string):Promise<{filename:string;pdf:Uint8Array}>;
  finalize(documentId:string,actor:string):Promise<ProcessStatus>;
@@ -19,7 +19,7 @@ const record=(value:unknown):value is Record<string,unknown>=>!!value&&typeof va
 const exact=(value:Record<string,unknown>,keys:string[])=>Object.keys(value).sort().join(',')===[...keys].sort().join(',');
 const filename=(value:unknown):value is string=>typeof value==='string'&&/^[^\r\n/\\]{1,124}\.pdf$/i.test(value);
 const statuses=['ready_for_signer','final_review','completed','failed'];
-function publicProcess(value:unknown):PublicProcess{if(!record(value)||!exact(value,['id','filename','status','signerCount'])||typeof value.id!=='string'||!uuid(value.id)||!filename(value.filename)||!statuses.includes(String(value.status))||!Number.isInteger(value.signerCount)||Number(value.signerCount)<1||Number(value.signerCount)>20)throw Error();return value as PublicProcess;}
+function publicProcess(value:unknown):PublicProcess{if(!record(value)||!exact(value,['id','filename','status','signerCount'])||typeof value.id!=='string'||!uuid(value.id)||!filename(value.filename)||!statuses.includes(String(value.status))||!Number.isInteger(value.signerCount)||Number(value.signerCount)<0||Number(value.signerCount)>20)throw Error();return value as PublicProcess;}
 function processStatus(value:unknown):ProcessStatus{if(!record(value)||!exact(value,['id','filename','status','signatureCount','stages'])||typeof value.id!=='string'||!uuid(value.id)||!filename(value.filename)||!statuses.includes(String(value.status))||!Number.isInteger(value.signatureCount)||Number(value.signatureCount)<0||Number(value.signatureCount)>20||!Array.isArray(value.stages)||value.stages.length<1||value.stages.length>20)throw Error();if(!value.stages.every((stage,index)=>record(stage)&&exact(stage,['ordinal','status','current'])&&stage.ordinal===index+1&&['ready_for_signer','validated'].includes(String(stage.status))&&typeof stage.current==='boolean')||value.stages.filter(stage=>record(stage)&&stage.current===true).length>1)throw Error();return value as ProcessStatus;}
 async function pdfBody(request:Request){
  if(request.headers.get('Content-Type')?.split(';')[0].trim().toLowerCase()!=='application/pdf'||!request.body)throw Error();
@@ -32,8 +32,13 @@ function metadata(request:Request){
  const rawFilename=request.headers.get('X-LeapSign-Filename')??'';const rawSigners=request.headers.get('X-LeapSign-Signers')??'';
  let filename:string,signers:unknown;
  try{filename=decodeURIComponent(rawFilename);const binary=atob(rawSigners.replace(/-/g,'+').replace(/_/g,'/'));signers=JSON.parse(new TextDecoder('utf-8',{fatal:true}).decode(Uint8Array.from(binary,char=>char.charCodeAt(0))));}catch{throw Error();}
- if(!/^[^\r\n/\\]{1,124}\.pdf$/i.test(filename)||!Array.isArray(signers)||signers.length<1||signers.length>20||!signers.every(value=>typeof value==='string'&&value.length<=254&&/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value))||new Set(signers.map(value=>String(value).toLowerCase())).size!==signers.length)throw Error();
- return{filename,signers:signers.map(value=>String(value).toLowerCase())};
+ const processHeader=request.headers.get('X-LeapSign-Process');let options:Record<string,unknown>|undefined;
+ if(processHeader){try{const binary=atob(processHeader.replace(/-/g,'+').replace(/_/g,'/'));const parsed:unknown=JSON.parse(new TextDecoder('utf-8',{fatal:true}).decode(Uint8Array.from(binary,char=>char.charCodeAt(0))));if(!record(parsed))throw Error();options=parsed;}catch{throw Error();}}
+ const mode=options?.mode;const message=options?.message;const expected=options?.expectedSignatures;const access=options?.accessSecretHash;
+ if(!/^[^\r\n/\\]{1,124}\.pdf$/i.test(filename)||!Array.isArray(signers)||signers.length>20||!signers.every(value=>typeof value==='string'&&value.length<=254&&/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value))||new Set(signers.map(value=>String(value).toLowerCase())).size!==signers.length)throw Error();
+ if(!options){if(signers.length<1)throw Error();return{filename,signers:signers.map(value=>String(value).toLowerCase())};}
+ if(!exact(options,['mode','message','expectedSignatures','accessSecretHash'])||!['directed','open_queue'].includes(String(mode))||typeof message!=='string'||message.length>2000||(expected!==null&&(!Number.isInteger(expected)||Number(expected)<1||Number(expected)>20))||(access!==null&&(typeof access!=='string'||!/^[a-f0-9]{64}$/.test(access)))||(mode==='directed'&&signers.length<1)||(mode==='open_queue'&&signers.length!==0))throw Error();
+ return{filename,signers:signers.map(value=>String(value).toLowerCase()),mode:mode as 'directed'|'open_queue',message,expectedSignatures:expected as number|null,accessSecretHash:access as string|null};
 }
 export function createProcessHandler(deps:ProcessDependencies){
  const origin=deps.origin??V2_STAGING_ORIGIN;assertV2Origin(origin);

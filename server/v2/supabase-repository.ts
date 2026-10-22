@@ -14,6 +14,12 @@ const filename=(value:unknown):value is string=>typeof value==='string'&&/^[^\r\
 const storage=(value:unknown):value is string=>typeof value==='string'&&/^[a-f0-9-]{36}\/versions\/[a-f0-9-]{36}\.pdf$/i.test(value);
 const digest=(value:Uint8Array|string)=>createHash('sha256').update(value).digest('hex');
 const invitationToken=()=>`invite_${randomBytes(32).toString('base64url')}`;
+type Contact={id:string;email:string;displayName:string|null;usageCount:number;lastUsedAt:string|null};
+
+function contact(value:unknown):Contact{
+ if(!object(value)||!uuid(value.id)||typeof value.email!=='string'||value.email.length>254||(value.displayName!==null&&typeof value.displayName!=='string')||!Number.isInteger(value.usageCount)||(value.lastUsedAt!==null&&typeof value.lastUsedAt!=='string'))throw unavailable();
+ return value as Contact;
+}
 
 function publicProcess(value:unknown){
  if(!object(value)||!uuid(value.id)||!filename(value.filename)||value.status!=='ready_for_signer'||!Number.isInteger(value.signerCount))throw unavailable();
@@ -38,12 +44,12 @@ export function createSupabaseRepositories(database:Database,validator:Validator
  const versions=new Map<string,{path:string;bytes:number;hash:string}>();
  return{
   async reserve(actor:string,operation:string){await database.rpc('v2_reserve_operation',{p_actor_id:actor,p_operation:operation},value=>{if(!object(value)||value.reserved!==true)throw unavailable();return true;});},
-  async create(input:{ownerId:string;clientIpHash:string;filename:string;pdf:Uint8Array;signers:string[]}){
+  async create(input:{ownerId:string;clientIpHash:string;filename:string;pdf:Uint8Array;signers:string[];mode?:'directed'|'open_queue';message?:string;expectedSignatures?:number|null;accessSecretHash?:string|null}){
    const prepared=await validator.prepare(input.pdf);if(prepared.signatureCount+input.signers.length>20)throw unavailable();
    const documentId=randomUUID(),versionId=randomUUID(),path=`${documentId}/versions/${versionId}.pdf`;
    const staged=await database.stagePrivateObject(path,prepared.pdf);
    const invitationTokens=input.signers.map(()=>invitationToken());
-   try{return await database.rpcWithDefiniteRejection('v2_create_process',{p_owner_id:input.ownerId,p_client_ip_hash:input.clientIpHash,p_document_id:documentId,p_version_id:versionId,p_filename:input.filename,p_sha256:prepared.sha256,p_byte_size:prepared.byteSize,p_page_count:prepared.pageCount,p_last_page_width:prepared.lastPageWidth,p_last_page_height:prepared.lastPageHeight,p_existing_signature_count:prepared.signatureCount,p_signer_emails:input.signers,p_invitation_tokens:invitationTokens},publicProcess);}
+   try{return await database.rpcWithDefiniteRejection('v2_create_parity_process',{p_owner_id:input.ownerId,p_client_ip_hash:input.clientIpHash,p_document_id:documentId,p_version_id:versionId,p_filename:input.filename,p_sha256:prepared.sha256,p_byte_size:prepared.byteSize,p_page_count:prepared.pageCount,p_last_page_width:prepared.lastPageWidth,p_last_page_height:prepared.lastPageHeight,p_existing_signature_count:prepared.signatureCount,p_signer_emails:input.signers,p_invitation_tokens:invitationTokens,p_mode:input.mode??'directed',p_message:input.message??'',p_expected_signatures:input.expectedSignatures??input.signers.length,p_access_secret_hash:input.accessSecretHash??null},publicProcess);}
    catch(error){if(isDefiniteTransactionRejection(error))await staged.cleanupAfterDefiniteRejection();throw unavailable();}
   },
   status(documentId:string,actor:string){return database.rpc('v2_get_process_status',{p_document_id:documentId,p_actor_id:actor},value=>value as never);},
@@ -55,5 +61,8 @@ export function createSupabaseRepositories(database:Database,validator:Validator
   async loadIntent(id:string,actor:string){const value=await database.rpc('v2_get_intent_download',{p_intent_id:id,p_actor_id:actor},raw=>{if(!object(raw)||!object(raw.current)||!filename(raw.filename)||!storage(raw.storagePath)||!Number.isInteger(raw.byteSize))throw unavailable();const current=stage({...raw.current,filename:raw.filename,previousSignatureCount:raw.previousSignatureCount,storagePath:raw.storagePath,byteSize:raw.byteSize});return{intent:intent(raw.intent,'download-authorized-nonce-withheld-00000000000'),current};});stages.set(value.current.documentId,value.current);versions.set(value.current.versionId,{path:value.current.storagePath,bytes:value.current.byteSize,hash:value.current.baseSha256});return value.intent;},
   async receipt(id:string,actor:string){return database.rpc('v2_get_intent_receipt',{p_intent_id:id,p_actor_id:actor},raw=>{if(!object(raw)||typeof raw.state!=='string')throw unavailable();return{state:raw.state,...(raw.report?{report:raw.report as SignatureValidationResult}:{})} as never;});},
   verification(id:string,actor:string){return database.rpc('v2_get_verification',{p_intent_id:id,p_actor_id:actor},value=>value as never);},
+  listContacts(ownerId:string){return database.rpc('v2_list_contacts',{p_owner_id:ownerId},value=>{if(!Array.isArray(value)||value.length>500)throw unavailable();return value.map(contact);});},
+  upsertContact(input:{ownerId:string;id:string|null;email:string;displayName:string|null}){return database.rpc('v2_upsert_contact',{p_owner_id:input.ownerId,p_contact_id:input.id,p_email:input.email,p_display_name:input.displayName},contact);},
+  async deleteContact(ownerId:string,id:string){await database.rpc('v2_delete_contact',{p_owner_id:ownerId,p_contact_id:id},value=>{if(!object(value)||value.ok!==true)throw unavailable();return true;});},
  };
 }

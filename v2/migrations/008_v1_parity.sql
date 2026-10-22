@@ -235,6 +235,39 @@ returns setof signing_v2.lifecycle_jobs language sql security definer set search
  update signing_v2.lifecycle_jobs j set status='processing',locked_at=now(),updated_at=now() from candidates c where j.id=c.id returning j.*
 $$;
 
+create function public.v2_list_contacts(p_owner_id uuid)
+returns jsonb language sql security definer set search_path=pg_catalog,signing_v2,pg_temp as $$
+ select coalesce(jsonb_agg(jsonb_build_object('id',id,'email',email,'displayName',display_name,'usageCount',usage_count,'lastUsedAt',last_used_at) order by last_used_at desc nulls last,created_at desc),'[]'::jsonb)
+ from signing_v2.owner_contacts where owner_id=p_owner_id
+$$;
+
+create function public.v2_delete_contact(p_owner_id uuid,p_contact_id uuid)
+returns jsonb language plpgsql security definer set search_path=pg_catalog,signing_v2,pg_temp as $$
+begin delete from signing_v2.owner_contacts where id=p_contact_id and owner_id=p_owner_id;if not found then raise exception 'NOT_FOUND';end if;return jsonb_build_object('ok',true);end $$;
+
+create function public.v2_create_parity_process(
+ p_owner_id uuid,p_client_ip_hash text,p_document_id uuid,p_version_id uuid,p_filename text,p_sha256 text,p_byte_size integer,
+ p_page_count integer,p_last_page_width real,p_last_page_height real,p_existing_signature_count integer,
+ p_signer_emails text[],p_invitation_tokens text[],p_mode text,p_message text,p_expected_signatures integer,p_access_secret_hash text
+) returns jsonb language plpgsql security definer set search_path=pg_catalog,signing_v2,auth,pg_temp as $$
+declare result jsonb;normalized text;
+begin
+ if p_mode not in ('directed','open_queue') or char_length(coalesce(p_message,''))>2000 or (p_access_secret_hash is not null and p_access_secret_hash!~'^[a-f0-9]{64}$') or (p_expected_signatures is not null and p_expected_signatures not between 1 and 20) then raise exception 'INVALID_PROCESS_OPTIONS';end if;
+ if p_mode='directed' then
+  if p_expected_signatures is distinct from cardinality(p_signer_emails) or p_access_secret_hash is not null then raise exception 'INVALID_PROCESS_OPTIONS';end if;
+  result:=public.v2_create_process(p_owner_id,p_client_ip_hash,p_document_id,p_version_id,p_filename,p_sha256,p_byte_size,p_page_count,p_last_page_width,p_last_page_height,p_existing_signature_count,p_signer_emails,p_invitation_tokens);
+ else
+  if cardinality(p_signer_emails)<>0 or cardinality(p_invitation_tokens)<>0 or not exists(select 1 from signing_v2.settings where (external_enabled or direct_enabled) and profile_enabled) or not exists(select 1 from auth.users where id=p_owner_id and deleted_at is null and (banned_until is null or banned_until<=now())) or p_client_ip_hash!~'^[a-f0-9]{64}$' or p_existing_signature_count not between 0 and 19 then raise exception 'INVALID_PROCESS_OPTIONS';end if;
+  insert into signing_v2.documents(id,owner_id,current_version_id,active_stage_id,status,filename) values(p_document_id,p_owner_id,null,null,'draft',p_filename);
+  insert into signing_v2.versions(id,document_id,sha256,storage_path,byte_size,parent_id,signature_count,page_count,last_page_width,last_page_height) values(p_version_id,p_document_id,p_sha256,p_document_id::text||'/versions/'||p_version_id::text||'.pdf',p_byte_size,null,p_existing_signature_count,p_page_count,p_last_page_width,p_last_page_height);
+  update signing_v2.documents set current_version_id=p_version_id,status='ready_for_signer' where id=p_document_id;
+  result:=jsonb_build_object('id',p_document_id,'filename',p_filename,'status','ready_for_signer','signerCount',0);
+ end if;
+ insert into signing_v2.process_access(document_id,owner_id,mode,message,expected_signatures,access_secret_hash) values(p_document_id,p_owner_id,p_mode,coalesce(p_message,''),p_expected_signatures,p_access_secret_hash);
+ foreach normalized in array p_signer_emails loop update signing_v2.owner_contacts set usage_count=usage_count+1,last_used_at=now(),updated_at=now() where owner_id=p_owner_id and email=lower(btrim(normalized));end loop;
+ return result;
+end $$;
+
 alter function public.v2_upsert_contact(uuid,uuid,text,text) owner to postgres;
 alter function public.v2_join_queue(uuid,uuid,text,text,text) owner to postgres;
 alter function public.v2_claim_turn(uuid,uuid,text) owner to postgres;
@@ -243,6 +276,9 @@ alter function public.v2_create_final_share(uuid,uuid,text,timestamptz) owner to
 alter function public.v2_start_arcade(text,text,integer) owner to postgres;
 alter function public.v2_finish_arcade(text,text,integer) owner to postgres;
 alter function public.v2_claim_lifecycle_jobs(integer) owner to postgres;
+alter function public.v2_list_contacts(uuid) owner to postgres;
+alter function public.v2_delete_contact(uuid,uuid) owner to postgres;
+alter function public.v2_create_parity_process(uuid,text,uuid,uuid,text,text,integer,integer,real,real,integer,text[],text[],text,text,integer,text) owner to postgres;
 
 revoke all on all functions in schema signing_v2 from public,anon,authenticated,service_role;
 revoke all on function public.v2_upsert_contact(uuid,uuid,text,text) from public,anon,authenticated,service_role;
@@ -253,6 +289,9 @@ revoke all on function public.v2_create_final_share(uuid,uuid,text,timestamptz) 
 revoke all on function public.v2_start_arcade(text,text,integer) from public,anon,authenticated,service_role;
 revoke all on function public.v2_finish_arcade(text,text,integer) from public,anon,authenticated,service_role;
 revoke all on function public.v2_claim_lifecycle_jobs(integer) from public,anon,authenticated,service_role;
+revoke all on function public.v2_list_contacts(uuid) from public,anon,authenticated,service_role;
+revoke all on function public.v2_delete_contact(uuid,uuid) from public,anon,authenticated,service_role;
+revoke all on function public.v2_create_parity_process(uuid,text,uuid,uuid,text,text,integer,integer,real,real,integer,text[],text[],text,text,integer,text) from public,anon,authenticated,service_role;
 grant execute on function public.v2_upsert_contact(uuid,uuid,text,text) to service_role;
 grant execute on function public.v2_join_queue(uuid,uuid,text,text,text) to service_role;
 grant execute on function public.v2_claim_turn(uuid,uuid,text) to service_role;
@@ -261,5 +300,8 @@ grant execute on function public.v2_create_final_share(uuid,uuid,text,timestampt
 grant execute on function public.v2_start_arcade(text,text,integer) to service_role;
 grant execute on function public.v2_finish_arcade(text,text,integer) to service_role;
 grant execute on function public.v2_claim_lifecycle_jobs(integer) to service_role;
+grant execute on function public.v2_list_contacts(uuid) to service_role;
+grant execute on function public.v2_delete_contact(uuid,uuid) to service_role;
+grant execute on function public.v2_create_parity_process(uuid,text,uuid,uuid,text,text,integer,integer,real,real,integer,text[],text[],text,text,integer,text) to service_role;
 
 commit;

@@ -3,6 +3,7 @@ import {createGuestSessionHandler} from '../../../server/v2/guest-session-api';
 import {createAdminHandler} from '../../../server/v2/admin-api';
 import {processOutboxBatch,verifyResendWebhook,type OutboxJob,type RenderedEmail} from '../../../server/v2/email-outbox';
 import {createProcessHandler} from '../../../server/v2/process-api';
+import {createContactsHandler} from '../../../server/v2/contacts-api';
 import {createPreparationHandler} from '../../../server/v2/prepare-api';
 import {createSubmissionHandler} from '../../../server/v2/submit-api';
 import {createReceiptHandler} from '../../../server/v2/receipts-api';
@@ -71,6 +72,7 @@ export default{async fetch(request:Request,env:Env):Promise<Response>{
    await database.rpc('v2_record_email_event',{p_event_id:eventId,p_message_id:messageId,p_event_type:eventType,p_recipient:recipient},()=>true);
    return json({code:'ACCEPTED'},202);
   }
+  if(url.pathname==='/api/v2/contacts'||url.pathname.startsWith('/api/v2/contacts/'))return createContactsHandler({authenticate,reserve:reserve as never,list:repositories.listContacts,upsert:repositories.upsertContact,remove:repositories.deleteContact},expectedOrigin)(request);
   if(url.pathname==='/api/v2/processes'||url.pathname.startsWith('/api/v2/processes/'))return createProcessHandler({origin:expectedOrigin,authenticate,clientRateKey,reserve:reserve as never,create:repositories.create,status:repositories.status,download:repositories.download,finalize:repositories.finalize})(request);
   if(url.pathname==='/api/v2/signing/prepare'||/\/api\/v2\/signing\/intents\/[a-f0-9-]{36}\/pdf$/.test(url.pathname))return createPreparationHandler({origin:expectedOrigin,flags,authenticate,reserve:reserve as never,loadStage:repositories.loadStage,loadCanonical:repositories.loadCanonical,persistIntent:repositories.persistIntent,loadIntent:repositories.loadIntent})(request);
   if(url.pathname==='/api/v2/signing/submit'){
