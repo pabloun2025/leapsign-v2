@@ -54,6 +54,11 @@ assert.equal(results.filter(result=>result.status==='rejected').length,1);
 assert.equal(sql(`select count(*) from signing_v2.turn_leases where document_id='${document}' and status='active';`),'1');
 assert.equal(sql(`select actor_id from signing_v2.queue_entries where document_id='${document}' and status='active';`),actor1);
 console.log('PASS concurrent queue claims yield exactly one lease for the first position');
+assert.match(sql(`select public.v2_resolve_guest_session('${'1'.repeat(64)}');`),new RegExp(actor1));
+assert.equal(JSON.parse(sql(`select public.v2_release_turn('${document}','${actor1}');`)).ok,true);
+assert.equal(sql(`select count(*) from signing_v2.turn_leases where document_id='${document}' and status='released';`),'1');
+assert.equal(sql(`select count(*) from signing_v2.guest_sessions where actor_id='${actor1}' and revoked_at is not null;`),'1');
+console.log('PASS queue turn creates and revokes the existing v2 guest session');
 
 const paused=JSON.parse(sql(`select public.v2_process_action('${document}','${owner1}','pause',null,'owner request');`));
 assert.equal(paused.ok,true);

@@ -5,6 +5,8 @@ begin;
 alter table signing_v2.operation_budgets drop constraint operation_budgets_operation_check;
 alter table signing_v2.operation_budgets add constraint operation_budgets_operation_check
  check(operation in ('create','status','download','prepare','receipt','submit','validation','finalize','contacts','queue','process_action','final_share','arcade','admin'));
+alter table signing_v2.stages drop constraint stages_status_check;
+alter table signing_v2.stages add constraint stages_status_check check(status in ('ready_for_signer','validated','released','expired'));
 
 create table signing_v2.process_access(
  document_id uuid primary key references signing_v2.documents(id) on delete cascade,
@@ -169,11 +171,63 @@ begin
  if next_ordinal>20 then raise exception 'SIGNATURE_CAPACITY_REACHED';end if;
  stage_id:=gen_random_uuid();
  insert into signing_v2.stages(id,document_id,ordinal,signer_id,role) values(stage_id,p_document_id,next_ordinal,p_actor_id,'signer');
+ insert into signing_v2.signer_invitations(stage_id,actor_id,signer_email,token_hash,invitation_url,expires_at,exchanged_at) values(stage_id,p_actor_id,coalesce(entry.email,'queue-'||p_actor_id::text||'@invalid.local'),p_token_hash,null,now()+interval '10 minutes',now());
+ insert into signing_v2.guest_sessions(actor_id,stage_id,session_hash,expires_at) values(p_actor_id,stage_id,entry.session_hash,now()+interval '10 minutes');
  insert into signing_v2.turn_leases(document_id,queue_entry_id,stage_id,token_hash,expires_at) values(p_document_id,entry.id,stage_id,p_token_hash,now()+interval '10 minutes') returning * into lease;
  update signing_v2.queue_entries set status='active',updated_at=now() where id=entry.id;
  update signing_v2.documents set active_stage_id=stage_id,status='ready_for_signer' where id=p_document_id;
  return jsonb_build_object('leaseId',lease.id,'stageId',stage_id,'actorId',p_actor_id,'expiresAt',lease.expires_at);
 end $$;
+
+create function public.v2_get_round_access(p_document_id uuid,p_access_secret_hash text)
+returns jsonb language plpgsql security definer set search_path=pg_catalog,signing_v2,pg_temp as $$
+declare result jsonb;
+begin
+ select jsonb_build_object('id',d.id,'filename',d.filename,'message',pa.message,'protected',pa.access_secret_hash is not null,'paused',pa.paused,'expectedSignatures',pa.expected_signatures,'signatureCount',v.signature_count) into result
+ from signing_v2.documents d join signing_v2.process_access pa on pa.document_id=d.id and pa.mode='open_queue' join signing_v2.versions v on v.id=d.current_version_id and v.document_id=d.id
+ where d.id=p_document_id and d.status in ('ready_for_signer','final_review') and (pa.access_secret_hash is null or pa.access_secret_hash=p_access_secret_hash);
+ if result is null then raise exception 'ROUND_UNAVAILABLE';end if;return result;
+end $$;
+
+create function public.v2_resolve_queue_session(p_document_id uuid,p_session_hash text)
+returns jsonb language plpgsql security definer set search_path=pg_catalog,signing_v2,pg_temp as $$
+declare result jsonb;
+begin
+ if p_session_hash!~'^[a-f0-9]{64}$' then return null;end if;
+ select jsonb_build_object('actorId',q.actor_id,'status',q.status,'position',case when q.status='waiting' then (select count(*) from signing_v2.queue_entries a where a.document_id=q.document_id and a.status='waiting' and a.sequence<=q.sequence) else 0 end,'leaseExpiresAt',l.expires_at) into result
+ from signing_v2.queue_entries q left join signing_v2.turn_leases l on l.queue_entry_id=q.id and l.status='active'
+ where q.document_id=p_document_id and q.session_hash=p_session_hash;
+ return result;
+end $$;
+
+create function public.v2_release_turn(p_document_id uuid,p_actor_id uuid)
+returns jsonb language plpgsql security definer set search_path=pg_catalog,signing_v2,pg_temp as $$
+declare lease signing_v2.turn_leases%rowtype;
+begin
+ select l.* into lease from signing_v2.turn_leases l join signing_v2.queue_entries q on q.id=l.queue_entry_id where l.document_id=p_document_id and l.status='active' and q.actor_id=p_actor_id for update of l;
+ if lease.id is null then raise exception 'TURN_UNAVAILABLE';end if;
+ update signing_v2.intents set state='expired' where stage_id=lease.stage_id and state in ('signature_intent_issued','signed_pending_validation');
+ update signing_v2.guest_sessions set revoked_at=now() where stage_id=lease.stage_id and revoked_at is null;
+ update signing_v2.turn_leases set status='released',updated_at=now() where id=lease.id;
+ update signing_v2.queue_entries set status='left',updated_at=now() where id=lease.queue_entry_id;
+ update signing_v2.stages set status='released' where id=lease.stage_id and status='ready_for_signer';
+ update signing_v2.documents set active_stage_id=null where id=p_document_id and active_stage_id=lease.stage_id;
+ insert into signing_v2.lifecycle_jobs(kind,document_id,payload) values('promote_queue',p_document_id,jsonb_build_object('leaseId',lease.id));
+ return jsonb_build_object('ok',true);
+end $$;
+
+create function signing_v2.keep_open_queue_active() returns trigger language plpgsql set search_path=pg_catalog,signing_v2,pg_temp as $$
+declare access signing_v2.process_access%rowtype;lease signing_v2.turn_leases%rowtype;signatures integer;
+begin
+ if new.status<>'final_review' or old.active_stage_id is null then return new;end if;
+ select * into access from signing_v2.process_access where document_id=new.id and mode='open_queue';if access.document_id is null then return new;end if;
+ select * into lease from signing_v2.turn_leases where stage_id=old.active_stage_id and status='active';
+ if lease.id is not null then update signing_v2.turn_leases set status='completed',updated_at=now() where id=lease.id;update signing_v2.queue_entries set status='completed',updated_at=now() where id=lease.queue_entry_id;update signing_v2.guest_sessions set revoked_at=now() where stage_id=lease.stage_id and revoked_at is null;end if;
+ select count(*)::integer into signatures from signing_v2.stages where document_id=new.id and status='validated';
+ if access.expected_signatures is null or signatures<access.expected_signatures then new.status:='ready_for_signer';new.active_stage_id:=null;insert into signing_v2.lifecycle_jobs(kind,document_id,payload) values('promote_queue',new.id,jsonb_build_object('completedStage',old.active_stage_id));end if;
+ return new;
+end $$;
+create trigger v2_keep_open_queue_active before update of status,current_version_id on signing_v2.documents for each row execute function signing_v2.keep_open_queue_active();
 
 create function public.v2_process_action(p_document_id uuid,p_owner_id uuid,p_action text,p_version_id uuid,p_reason text)
 returns jsonb language plpgsql security definer set search_path=pg_catalog,signing_v2,pg_temp as $$
@@ -276,6 +330,9 @@ alter function public.v2_create_final_share(uuid,uuid,text,timestamptz) owner to
 alter function public.v2_start_arcade(text,text,integer) owner to postgres;
 alter function public.v2_finish_arcade(text,text,integer) owner to postgres;
 alter function public.v2_claim_lifecycle_jobs(integer) owner to postgres;
+alter function public.v2_get_round_access(uuid,text) owner to postgres;
+alter function public.v2_resolve_queue_session(uuid,text) owner to postgres;
+alter function public.v2_release_turn(uuid,uuid) owner to postgres;
 alter function public.v2_list_contacts(uuid) owner to postgres;
 alter function public.v2_delete_contact(uuid,uuid) owner to postgres;
 alter function public.v2_create_parity_process(uuid,text,uuid,uuid,text,text,integer,integer,real,real,integer,text[],text[],text,text,integer,text) owner to postgres;
@@ -289,6 +346,9 @@ revoke all on function public.v2_create_final_share(uuid,uuid,text,timestamptz) 
 revoke all on function public.v2_start_arcade(text,text,integer) from public,anon,authenticated,service_role;
 revoke all on function public.v2_finish_arcade(text,text,integer) from public,anon,authenticated,service_role;
 revoke all on function public.v2_claim_lifecycle_jobs(integer) from public,anon,authenticated,service_role;
+revoke all on function public.v2_get_round_access(uuid,text) from public,anon,authenticated,service_role;
+revoke all on function public.v2_resolve_queue_session(uuid,text) from public,anon,authenticated,service_role;
+revoke all on function public.v2_release_turn(uuid,uuid) from public,anon,authenticated,service_role;
 revoke all on function public.v2_list_contacts(uuid) from public,anon,authenticated,service_role;
 revoke all on function public.v2_delete_contact(uuid,uuid) from public,anon,authenticated,service_role;
 revoke all on function public.v2_create_parity_process(uuid,text,uuid,uuid,text,text,integer,integer,real,real,integer,text[],text[],text,text,integer,text) from public,anon,authenticated,service_role;
@@ -300,6 +360,9 @@ grant execute on function public.v2_create_final_share(uuid,uuid,text,timestampt
 grant execute on function public.v2_start_arcade(text,text,integer) to service_role;
 grant execute on function public.v2_finish_arcade(text,text,integer) to service_role;
 grant execute on function public.v2_claim_lifecycle_jobs(integer) to service_role;
+grant execute on function public.v2_get_round_access(uuid,text) to service_role;
+grant execute on function public.v2_resolve_queue_session(uuid,text) to service_role;
+grant execute on function public.v2_release_turn(uuid,uuid) to service_role;
 grant execute on function public.v2_list_contacts(uuid) to service_role;
 grant execute on function public.v2_delete_contact(uuid,uuid) to service_role;
 grant execute on function public.v2_create_parity_process(uuid,text,uuid,uuid,text,text,integer,integer,real,real,integer,text[],text[],text,text,integer,text) to service_role;

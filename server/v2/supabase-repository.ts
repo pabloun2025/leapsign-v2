@@ -20,6 +20,8 @@ function contact(value:unknown):Contact{
  if(!object(value)||!uuid(value.id)||typeof value.email!=='string'||value.email.length>254||(value.displayName!==null&&typeof value.displayName!=='string')||!Number.isInteger(value.usageCount)||(value.lastUsedAt!==null&&typeof value.lastUsedAt!=='string'))throw unavailable();
  return value as Contact;
 }
+function round(value:unknown){if(!object(value)||!uuid(value.id)||!filename(value.filename)||typeof value.message!=='string'||typeof value.protected!=='boolean'||typeof value.paused!=='boolean'||(value.expectedSignatures!==null&&!Number.isInteger(value.expectedSignatures))||!Number.isInteger(value.signatureCount))throw unavailable();return value as {id:string;filename:string;message:string;protected:boolean;paused:boolean;expectedSignatures:number|null;signatureCount:number};}
+function queue(value:unknown){if(!object(value)||!uuid(value.actorId)||!['waiting','active','completed','left'].includes(String(value.status))||!Number.isInteger(value.position)||(value.leaseExpiresAt!==null&&typeof value.leaseExpiresAt!=='string'))throw unavailable();return value as {actorId:string;status:'waiting'|'active'|'completed'|'left';position:number;leaseExpiresAt:string|null};}
 
 function publicProcess(value:unknown){
  if(!object(value)||!uuid(value.id)||!filename(value.filename)||value.status!=='ready_for_signer'||!Number.isInteger(value.signerCount))throw unavailable();
@@ -64,5 +66,10 @@ export function createSupabaseRepositories(database:Database,validator:Validator
   listContacts(ownerId:string){return database.rpc('v2_list_contacts',{p_owner_id:ownerId},value=>{if(!Array.isArray(value)||value.length>500)throw unavailable();return value.map(contact);});},
   upsertContact(input:{ownerId:string;id:string|null;email:string;displayName:string|null}){return database.rpc('v2_upsert_contact',{p_owner_id:input.ownerId,p_contact_id:input.id,p_email:input.email,p_display_name:input.displayName},contact);},
   async deleteContact(ownerId:string,id:string){await database.rpc('v2_delete_contact',{p_owner_id:ownerId,p_contact_id:id},value=>{if(!object(value)||value.ok!==true)throw unavailable();return true;});},
+  getRound(documentId:string,accessSecretHash:string|null){return database.rpc('v2_get_round_access',{p_document_id:documentId,p_access_secret_hash:accessSecretHash},round);},
+  joinQueue(input:{documentId:string;actorId:string;sessionHash:string;email:string|null;displayName:string|null}){return database.rpc('v2_join_queue',{p_document_id:input.documentId,p_actor_id:input.actorId,p_session_hash:input.sessionHash,p_email:input.email,p_display_name:input.displayName},value=>{if(!object(value)||!uuid(value.entryId)||!uuid(value.actorId)||!['waiting','active'].includes(String(value.status))||!Number.isInteger(value.position))throw unavailable();return value as {entryId:string;actorId:string;status:'waiting'|'active';position:number};});},
+  resolveQueue(documentId:string,sessionHash:string){return database.rpc('v2_resolve_queue_session',{p_document_id:documentId,p_session_hash:sessionHash},value=>value===null?null:queue(value));},
+  claimTurn(documentId:string,actorId:string,tokenHash:string){return database.rpc('v2_claim_turn',{p_document_id:documentId,p_actor_id:actorId,p_token_hash:tokenHash},value=>{if(!object(value)||!uuid(value.leaseId)||!uuid(value.stageId)||!uuid(value.actorId)||typeof value.expiresAt!=='string')throw unavailable();return value as {leaseId:string;stageId:string;actorId:string;expiresAt:string};});},
+  async releaseTurn(documentId:string,actorId:string){await database.rpc('v2_release_turn',{p_document_id:documentId,p_actor_id:actorId},value=>{if(!object(value)||value.ok!==true)throw unavailable();return true;});},
  };
 }
