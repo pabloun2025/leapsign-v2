@@ -7,6 +7,7 @@ import {createContactsHandler} from '../../../server/v2/contacts-api';
 import {createQueueHandler} from '../../../server/v2/queue-api';
 import {createProcessActionsHandler} from '../../../server/v2/process-actions-api';
 import {createFinalShareHandler} from '../../../server/v2/final-share-api';
+import {createArcadeHandler} from '../../../server/v2/arcade-api';
 import {createPreparationHandler} from '../../../server/v2/prepare-api';
 import {createSubmissionHandler} from '../../../server/v2/submit-api';
 import {createReceiptHandler} from '../../../server/v2/receipts-api';
@@ -77,6 +78,7 @@ export default{async fetch(request:Request,env:Env):Promise<Response>{
   }
   if(url.pathname==='/api/v2/contacts'||url.pathname.startsWith('/api/v2/contacts/'))return createContactsHandler({authenticate,reserve:reserve as never,list:repositories.listContacts,upsert:repositories.upsertContact,remove:repositories.deleteContact},expectedOrigin)(request);
   if(url.pathname.startsWith('/api/v2/rounds/'))return createQueueHandler({round:repositories.getRound,join:repositories.joinQueue,resolve:repositories.resolveQueue,claim:repositories.claimTurn,release:repositories.releaseTurn,reserve:reserve as never},expectedOrigin)(request);
+  if(url.pathname.startsWith('/api/v2/arcade/'))return createArcadeHandler({clientKey:clientRateKey,start:repositories.startArcade,finish:repositories.finishArcade,leaderboard:repositories.leaderboard},expectedOrigin)(request);
   if(/^\/api\/v2\/(processes\/[a-f0-9-]{36}\/final-share|final\/[a-f0-9-]{36})$/.test(url.pathname))return createFinalShareHandler({authenticate,reserve:reserve as never,create:repositories.createFinalShare,resolve:repositories.resolveFinalShare},expectedOrigin)(request);
   if(/^\/api\/v2\/processes\/[a-f0-9-]{36}\/(actions|versions|incidents)$/.test(url.pathname))return createProcessActionsHandler({authenticate,reserve:reserve as never,action:repositories.processAction,versions:repositories.listVersions,listIncidents:repositories.listIncidents,reportIncident:repositories.reportIncident},expectedOrigin)(request);
   if(url.pathname==='/api/v2/processes'||url.pathname.startsWith('/api/v2/processes/'))return createProcessHandler({origin:expectedOrigin,authenticate,clientRateKey,reserve:reserve as never,create:repositories.create,status:repositories.status,download:repositories.download,finalize:repositories.finalize})(request);

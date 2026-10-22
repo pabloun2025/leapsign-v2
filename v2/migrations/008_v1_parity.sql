@@ -342,8 +342,13 @@ begin
  update signing_v2.arcade_runs set consumed=true,finished_at=now() where id=run.id;
  insert into signing_v2.arcade_records(run_id,alias,score) values(run.id,p_alias,p_score);
  delete from signing_v2.arcade_records where id in(select id from signing_v2.arcade_records order by score desc,created_at,id offset 3);
- return jsonb_build_object('accepted',true,'score',p_score);
+ return jsonb_build_object('alias',p_alias,'score',p_score,'createdAt',now());
 end $$;
+
+create function public.v2_arcade_leaderboard()
+returns jsonb language sql security definer set search_path=pg_catalog,signing_v2,pg_temp as $$
+ select coalesce(jsonb_agg(jsonb_build_object('alias',r.alias,'score',r.score,'createdAt',r.created_at) order by r.score desc,r.created_at,r.id),'[]'::jsonb) from (select * from signing_v2.arcade_records order by score desc,created_at,id limit 3) r
+$$;
 
 create function public.v2_claim_lifecycle_jobs(p_limit integer default 20)
 returns setof signing_v2.lifecycle_jobs language sql security definer set search_path=pg_catalog,signing_v2,pg_temp as $$
@@ -392,6 +397,7 @@ alter function public.v2_create_final_share(uuid,uuid,text,timestamptz) owner to
 alter function public.v2_resolve_final_share(uuid,text) owner to postgres;
 alter function public.v2_start_arcade(text,text,integer) owner to postgres;
 alter function public.v2_finish_arcade(text,text,integer) owner to postgres;
+alter function public.v2_arcade_leaderboard() owner to postgres;
 alter function public.v2_claim_lifecycle_jobs(integer) owner to postgres;
 alter function public.v2_get_round_access(uuid,text) owner to postgres;
 alter function public.v2_resolve_queue_session(uuid,text) owner to postgres;
@@ -412,6 +418,7 @@ revoke all on function public.v2_create_final_share(uuid,uuid,text,timestamptz) 
 revoke all on function public.v2_resolve_final_share(uuid,text) from public,anon,authenticated,service_role;
 revoke all on function public.v2_start_arcade(text,text,integer) from public,anon,authenticated,service_role;
 revoke all on function public.v2_finish_arcade(text,text,integer) from public,anon,authenticated,service_role;
+revoke all on function public.v2_arcade_leaderboard() from public,anon,authenticated,service_role;
 revoke all on function public.v2_claim_lifecycle_jobs(integer) from public,anon,authenticated,service_role;
 revoke all on function public.v2_get_round_access(uuid,text) from public,anon,authenticated,service_role;
 revoke all on function public.v2_resolve_queue_session(uuid,text) from public,anon,authenticated,service_role;
@@ -430,6 +437,7 @@ grant execute on function public.v2_create_final_share(uuid,uuid,text,timestampt
 grant execute on function public.v2_resolve_final_share(uuid,text) to service_role;
 grant execute on function public.v2_start_arcade(text,text,integer) to service_role;
 grant execute on function public.v2_finish_arcade(text,text,integer) to service_role;
+grant execute on function public.v2_arcade_leaderboard() to service_role;
 grant execute on function public.v2_claim_lifecycle_jobs(integer) to service_role;
 grant execute on function public.v2_get_round_access(uuid,text) to service_role;
 grant execute on function public.v2_resolve_queue_session(uuid,text) to service_role;

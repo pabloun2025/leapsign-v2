@@ -80,5 +80,8 @@ export function createSupabaseRepositories(database:Database,validator:Validator
   reportIncident(input:{documentId:string;actorId:string;reason:string;note:string}){return database.rpc('v2_report_process_incident',{p_document_id:input.documentId,p_actor_id:input.actorId,p_reason:input.reason,p_note:input.note},incident);},
   createFinalShare(input:{documentId:string;ownerId:string;tokenHash:string;expiresAt:string}){return database.rpc('v2_create_final_share',{p_document_id:input.documentId,p_owner_id:input.ownerId,p_token_hash:input.tokenHash,p_expires_at:input.expiresAt},finalShare);},
   async resolveFinalShare(input:{shareId:string;tokenHash:string}){const meta=await database.rpc('v2_resolve_final_share',{p_share_id:input.shareId,p_token_hash:input.tokenHash},download);const pdf=await database.readPrivateObject(meta.storagePath,meta.byteSize);if(pdf.length!==meta.byteSize||digest(pdf)!==meta.sha256)throw unavailable();return{filename:meta.filename,expiresAt:(meta as typeof meta&{expiresAt:string}).expiresAt,pdf};},
+  startArcade(input:{ticketHash:string;originHash:string;seed:number}){return database.rpc('v2_start_arcade',{p_ticket_hash:input.ticketHash,p_origin_hash:input.originHash,p_seed:input.seed},value=>value as {runId:string;seed:number;expiresAt:string});},
+  finishArcade(input:{ticketHash:string;alias:string;score:number}){return database.rpc('v2_finish_arcade',{p_ticket_hash:input.ticketHash,p_alias:input.alias,p_score:input.score},value=>value as {alias:string;score:number;createdAt:string});},
+  leaderboard(){return database.rpc('v2_arcade_leaderboard',{},value=>value as Array<{alias:string;score:number;createdAt:string}>);},
  };
 }
