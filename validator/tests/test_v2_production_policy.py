@@ -50,7 +50,7 @@ def test_production_policy_is_official_hashed_and_legally_bounded():
     assert not any("synthetic" in entry["file"].lower() for authority in policy["authorities"] for group in ("trustAnchors", "intermediates", "revocation") for entry in authority[group])
 
 
-def test_bce_chain_and_crl_are_well_formed_current_and_signed():
+def test_bce_chain_and_bundled_crl_snapshots_are_well_formed_pinned_and_signed():
     authority = _manifest()["authorities"][0]
     root = x509.load_der_x509_certificate(_material(authority["trustAnchors"][0]))
     intermediate = x509.load_der_x509_certificate(_material(authority["intermediates"][0]))
@@ -72,7 +72,8 @@ def test_bce_chain_and_crl_are_well_formed_current_and_signed():
     crl_entry = authority["revocation"][0]
     crl = x509.load_der_x509_crl(_material(crl_entry))
     assert crl.issuer == root.subject
-    assert crl.last_update_utc <= now <= crl.next_update_utc
+    root_snapshot_time = datetime.fromisoformat(crl_entry["incorporatedAt"])
+    assert crl.last_update_utc <= root_snapshot_time <= crl.next_update_utc
     root.public_key().verify(
         crl.signature,
         crl.tbs_certlist_bytes,
@@ -87,7 +88,8 @@ def test_bce_chain_and_crl_are_well_formed_current_and_signed():
     leaf_crl_entry = authority["revocation"][1]
     leaf_crl = x509.load_der_x509_crl(_material(leaf_crl_entry))
     assert leaf_crl.issuer == intermediate.subject
-    assert leaf_crl.last_update_utc <= now <= leaf_crl.next_update_utc
+    leaf_snapshot_time = datetime.fromisoformat(leaf_crl_entry["incorporatedAt"])
+    assert leaf_crl.last_update_utc <= leaf_snapshot_time <= leaf_crl.next_update_utc
     intermediate.public_key().verify(
         leaf_crl.signature,
         leaf_crl.tbs_certlist_bytes,
