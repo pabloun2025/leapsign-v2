@@ -8,7 +8,7 @@ const documentId='22222222-2222-4222-8222-222222222222';
 
 describe('v2 guest invitation exchange',()=>{
  it('consumes an opaque invitation once and returns only a strict guest cookie and destination',async()=>{
-  const exchange=vi.fn(async()=>({actorId:actor,documentId,email:'signer@example.test',expiresAt:'2026-10-22T12:00:00.000Z'}));
+  const exchange=vi.fn(async()=>({actorId:actor,documentId,email:'signer@example.test',expiresAt:new Date(Date.now()+10*60_000).toISOString()}));
   const handler=createGuestSessionHandler({exchange,randomBytes:()=>new Uint8Array(32).fill(7)},origin);
   const response=await handler(new Request(origin+'/api/v2/guest-session',{method:'POST',headers:{Origin:origin,'Sec-Fetch-Site':'same-origin','X-LeapSign-Client':'v2','Content-Type':'application/json'},body:JSON.stringify({invitation})}));
   expect(response.status).toBe(200);
