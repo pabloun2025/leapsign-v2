@@ -231,21 +231,72 @@ create trigger v2_keep_open_queue_active before update of status,current_version
 
 create function public.v2_process_action(p_document_id uuid,p_owner_id uuid,p_action text,p_version_id uuid,p_reason text)
 returns jsonb language plpgsql security definer set search_path=pg_catalog,signing_v2,pg_temp as $$
-declare d signing_v2.documents%rowtype;
+declare d signing_v2.documents%rowtype;target signing_v2.versions%rowtype;initial_signatures integer;validated_stages integer;next_stage uuid;lease signing_v2.turn_leases%rowtype;
 begin
  select * into d from signing_v2.documents where id=p_document_id for update;
- if d.id is null or d.owner_id is distinct from p_owner_id then raise exception 'NOT_FOUND';end if;
+ if d.id is null or d.owner_id is distinct from p_owner_id or p_action not in ('pause','resume','release_turn','rollback','cancel','complete','purge') or char_length(coalesce(p_reason,''))>1000 or (p_action='rollback')<>(p_version_id is not null) then raise exception 'INVALID_ACTION';end if;
  if p_action='pause' then update signing_v2.process_access set paused=true,updated_at=now() where document_id=d.id;
  elsif p_action='resume' then update signing_v2.process_access set paused=false,updated_at=now() where document_id=d.id;
  elsif p_action='rollback' then
-  if not exists(select 1 from signing_v2.versions where id=p_version_id and document_id=d.id) then raise exception 'VERSION_NOT_FOUND';end if;
+  select * into target from signing_v2.versions where id=p_version_id and document_id=d.id;if target.id is null then raise exception 'VERSION_NOT_FOUND';end if;
+  select min(signature_count) into initial_signatures from signing_v2.versions where document_id=d.id;validated_stages:=greatest(0,target.signature_count-initial_signatures);
   update signing_v2.intents set state='expired' where document_id=d.id and state in ('signature_intent_issued','signed_pending_validation');
   update signing_v2.guest_sessions set revoked_at=now() where stage_id in(select id from signing_v2.stages where document_id=d.id) and revoked_at is null;
-  update signing_v2.documents set current_version_id=p_version_id where id=d.id;
- elsif p_action='cancel' then update signing_v2.documents set status='failed',active_stage_id=null where id=d.id;
- elsif p_action not in ('release_turn','complete','purge') then raise exception 'INVALID_ACTION';end if;
+  update signing_v2.turn_leases set status='released',updated_at=now() where document_id=d.id and status='active';
+  update signing_v2.stages set status=case when ordinal<=validated_stages then 'validated' else 'ready_for_signer' end where document_id=d.id;
+  select id into next_stage from signing_v2.stages where document_id=d.id and ordinal=validated_stages+1;
+  update signing_v2.documents set current_version_id=p_version_id,active_stage_id=next_stage,status=case when next_stage is null then 'final_review' else 'ready_for_signer' end where id=d.id;
+  update signing_v2.final_shares set revoked_at=now() where document_id=d.id and revoked_at is null;
+ elsif p_action='release_turn' then
+  select * into lease from signing_v2.turn_leases where document_id=d.id and status='active' for update;
+  if lease.id is not null then
+   update signing_v2.intents set state='expired' where stage_id=lease.stage_id and state in ('signature_intent_issued','signed_pending_validation');
+   update signing_v2.guest_sessions set revoked_at=now() where stage_id=lease.stage_id and revoked_at is null;
+   update signing_v2.turn_leases set status='released',updated_at=now() where id=lease.id;update signing_v2.queue_entries set status='left',updated_at=now() where id=lease.queue_entry_id;
+   update signing_v2.stages set status='released' where id=lease.stage_id and status='ready_for_signer';update signing_v2.documents set active_stage_id=null where id=d.id;
+   insert into signing_v2.lifecycle_jobs(kind,document_id,payload) values('promote_queue',d.id,jsonb_build_object('leaseId',lease.id));
+  end if;
+ elsif p_action='complete' then
+  if d.current_version_id is null or exists(select 1 from signing_v2.intents where document_id=d.id and state in ('signature_intent_issued','signed_pending_validation')) then raise exception 'PROCESS_BUSY';end if;
+  update signing_v2.documents set status='completed',active_stage_id=null where id=d.id;
+ elsif p_action in ('cancel','purge') then
+  update signing_v2.intents set state='expired' where document_id=d.id and state in ('signature_intent_issued','signed_pending_validation');
+  update signing_v2.guest_sessions set revoked_at=now() where stage_id in(select id from signing_v2.stages where document_id=d.id) and revoked_at is null;
+  update signing_v2.turn_leases set status='released',updated_at=now() where document_id=d.id and status='active';
+  update signing_v2.final_shares set revoked_at=now() where document_id=d.id and revoked_at is null;
+  update signing_v2.documents set status='failed',active_stage_id=null where id=d.id;
+  if p_action='purge' then insert into signing_v2.lifecycle_jobs(kind,document_id,payload) values('purge_process',d.id,'{}');end if;
+ end if;
  insert into signing_v2.process_events(document_id,actor_id,event,reason) values(d.id,p_owner_id,p_action,left(coalesce(p_reason,''),1000));
  return jsonb_build_object('id',d.id,'action',p_action,'ok',true);
+end $$;
+
+create function public.v2_list_process_versions(p_document_id uuid,p_actor_id uuid)
+returns jsonb language plpgsql security definer set search_path=pg_catalog,signing_v2,pg_temp as $$
+declare result jsonb;
+begin
+ if not exists(select 1 from signing_v2.documents d where d.id=p_document_id and (d.owner_id=p_actor_id or exists(select 1 from signing_v2.stages s where s.document_id=d.id and s.signer_id=p_actor_id))) then raise exception 'NOT_FOUND';end if;
+ select coalesce(jsonb_agg(jsonb_build_object('id',v.id,'sha256',v.sha256,'signatureCount',v.signature_count,'createdAt',v.created_at,'current',v.id=d.current_version_id) order by v.created_at desc,v.id desc),'[]'::jsonb) into result from signing_v2.documents d join signing_v2.versions v on v.document_id=d.id where d.id=p_document_id;
+ return result;
+end $$;
+
+create function public.v2_list_process_incidents(p_document_id uuid,p_actor_id uuid)
+returns jsonb language plpgsql security definer set search_path=pg_catalog,signing_v2,pg_temp as $$
+declare result jsonb;
+begin
+ if not exists(select 1 from signing_v2.documents d where d.id=p_document_id and (d.owner_id=p_actor_id or exists(select 1 from signing_v2.stages s where s.document_id=d.id and s.signer_id=p_actor_id))) then raise exception 'NOT_FOUND';end if;
+ select coalesce(jsonb_agg(jsonb_build_object('id',i.id,'status',i.status) order by i.created_at desc,i.id desc),'[]'::jsonb) into result from signing_v2.process_incidents i where i.document_id=p_document_id;
+ return result;
+end $$;
+
+create function public.v2_report_process_incident(p_document_id uuid,p_actor_id uuid,p_reason text,p_note text)
+returns jsonb language plpgsql security definer set search_path=pg_catalog,signing_v2,pg_temp as $$
+declare result signing_v2.process_incidents%rowtype;v_stage uuid;
+begin
+ select s.id into v_stage from signing_v2.stages s join signing_v2.documents d on d.id=s.document_id where d.id=p_document_id and (d.owner_id=p_actor_id or s.signer_id=p_actor_id) order by case when s.signer_id=p_actor_id then 0 else 1 end,s.ordinal limit 1;
+ if v_stage is null or p_reason not in ('signature_position','wrong_document','unreadable_pdf','other') or char_length(coalesce(p_note,''))>1000 then raise exception 'INVALID_INCIDENT';end if;
+ insert into signing_v2.process_incidents(document_id,actor_id,stage_id,reason,note) values(p_document_id,p_actor_id,v_stage,p_reason,coalesce(p_note,'')) returning * into result;
+ return jsonb_build_object('id',result.id,'status',result.status);
 end $$;
 
 create function public.v2_create_final_share(p_document_id uuid,p_owner_id uuid,p_token_hash text,p_expires_at timestamptz)
@@ -336,6 +387,9 @@ alter function public.v2_release_turn(uuid,uuid) owner to postgres;
 alter function public.v2_list_contacts(uuid) owner to postgres;
 alter function public.v2_delete_contact(uuid,uuid) owner to postgres;
 alter function public.v2_create_parity_process(uuid,text,uuid,uuid,text,text,integer,integer,real,real,integer,text[],text[],text,text,integer,text) owner to postgres;
+alter function public.v2_list_process_versions(uuid,uuid) owner to postgres;
+alter function public.v2_list_process_incidents(uuid,uuid) owner to postgres;
+alter function public.v2_report_process_incident(uuid,uuid,text,text) owner to postgres;
 
 revoke all on all functions in schema signing_v2 from public,anon,authenticated,service_role;
 revoke all on function public.v2_upsert_contact(uuid,uuid,text,text) from public,anon,authenticated,service_role;
@@ -352,6 +406,9 @@ revoke all on function public.v2_release_turn(uuid,uuid) from public,anon,authen
 revoke all on function public.v2_list_contacts(uuid) from public,anon,authenticated,service_role;
 revoke all on function public.v2_delete_contact(uuid,uuid) from public,anon,authenticated,service_role;
 revoke all on function public.v2_create_parity_process(uuid,text,uuid,uuid,text,text,integer,integer,real,real,integer,text[],text[],text,text,integer,text) from public,anon,authenticated,service_role;
+revoke all on function public.v2_list_process_versions(uuid,uuid) from public,anon,authenticated,service_role;
+revoke all on function public.v2_list_process_incidents(uuid,uuid) from public,anon,authenticated,service_role;
+revoke all on function public.v2_report_process_incident(uuid,uuid,text,text) from public,anon,authenticated,service_role;
 grant execute on function public.v2_upsert_contact(uuid,uuid,text,text) to service_role;
 grant execute on function public.v2_join_queue(uuid,uuid,text,text,text) to service_role;
 grant execute on function public.v2_claim_turn(uuid,uuid,text) to service_role;
@@ -366,5 +423,8 @@ grant execute on function public.v2_release_turn(uuid,uuid) to service_role;
 grant execute on function public.v2_list_contacts(uuid) to service_role;
 grant execute on function public.v2_delete_contact(uuid,uuid) to service_role;
 grant execute on function public.v2_create_parity_process(uuid,text,uuid,uuid,text,text,integer,integer,real,real,integer,text[],text[],text,text,integer,text) to service_role;
+grant execute on function public.v2_list_process_versions(uuid,uuid) to service_role;
+grant execute on function public.v2_list_process_incidents(uuid,uuid) to service_role;
+grant execute on function public.v2_report_process_incident(uuid,uuid,text,text) to service_role;
 
 commit;

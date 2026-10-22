@@ -22,6 +22,8 @@ function contact(value:unknown):Contact{
 }
 function round(value:unknown){if(!object(value)||!uuid(value.id)||!filename(value.filename)||typeof value.message!=='string'||typeof value.protected!=='boolean'||typeof value.paused!=='boolean'||(value.expectedSignatures!==null&&!Number.isInteger(value.expectedSignatures))||!Number.isInteger(value.signatureCount))throw unavailable();return value as {id:string;filename:string;message:string;protected:boolean;paused:boolean;expectedSignatures:number|null;signatureCount:number};}
 function queue(value:unknown){if(!object(value)||!uuid(value.actorId)||!['waiting','active','completed','left'].includes(String(value.status))||!Number.isInteger(value.position)||(value.leaseExpiresAt!==null&&typeof value.leaseExpiresAt!=='string'))throw unavailable();return value as {actorId:string;status:'waiting'|'active'|'completed'|'left';position:number;leaseExpiresAt:string|null};}
+function version(value:unknown){if(!object(value)||!uuid(value.id)||!hash(value.sha256)||!Number.isInteger(value.signatureCount)||typeof value.createdAt!=='string'||typeof value.current!=='boolean')throw unavailable();return value as {id:string;sha256:string;signatureCount:number;createdAt:string;current:boolean};}
+function incident(value:unknown){if(!object(value)||!uuid(value.id)||typeof value.status!=='string')throw unavailable();return value as {id:string;status:string};}
 
 function publicProcess(value:unknown){
  if(!object(value)||!uuid(value.id)||!filename(value.filename)||value.status!=='ready_for_signer'||!Number.isInteger(value.signerCount))throw unavailable();
@@ -71,5 +73,9 @@ export function createSupabaseRepositories(database:Database,validator:Validator
   resolveQueue(documentId:string,sessionHash:string){return database.rpc('v2_resolve_queue_session',{p_document_id:documentId,p_session_hash:sessionHash},value=>value===null?null:queue(value));},
   claimTurn(documentId:string,actorId:string,tokenHash:string){return database.rpc('v2_claim_turn',{p_document_id:documentId,p_actor_id:actorId,p_token_hash:tokenHash},value=>{if(!object(value)||!uuid(value.leaseId)||!uuid(value.stageId)||!uuid(value.actorId)||typeof value.expiresAt!=='string')throw unavailable();return value as {leaseId:string;stageId:string;actorId:string;expiresAt:string};});},
   async releaseTurn(documentId:string,actorId:string){await database.rpc('v2_release_turn',{p_document_id:documentId,p_actor_id:actorId},value=>{if(!object(value)||value.ok!==true)throw unavailable();return true;});},
+  processAction(input:{documentId:string;actorId:string;action:string;versionId:string|null;reason:string}){return database.rpc('v2_process_action',{p_document_id:input.documentId,p_owner_id:input.actorId,p_action:input.action,p_version_id:input.versionId,p_reason:input.reason},value=>{if(!object(value)||value.ok!==true||!uuid(value.id)||value.action!==input.action)throw unavailable();return value;});},
+  listVersions(documentId:string,actorId:string){return database.rpc('v2_list_process_versions',{p_document_id:documentId,p_actor_id:actorId},value=>{if(!Array.isArray(value)||value.length>100)throw unavailable();return value.map(version);});},
+  listIncidents(documentId:string,actorId:string){return database.rpc('v2_list_process_incidents',{p_document_id:documentId,p_actor_id:actorId},value=>{if(!Array.isArray(value)||value.length>100)throw unavailable();return value.map(incident);});},
+  reportIncident(input:{documentId:string;actorId:string;reason:string;note:string}){return database.rpc('v2_report_process_incident',{p_document_id:input.documentId,p_actor_id:input.actorId,p_reason:input.reason,p_note:input.note},incident);},
  };
 }
