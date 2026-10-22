@@ -58,6 +58,7 @@ export function createSupabaseRepositories(database:Database,validator:Validator
    catch(error){if(isDefiniteTransactionRejection(error))await staged.cleanupAfterDefiniteRejection();throw unavailable();}
   },
   status(documentId:string,actor:string){return database.rpc('v2_get_process_status',{p_document_id:documentId,p_actor_id:actor},value=>value as never);},
+  listProcesses(actor:string){return database.rpc('v2_list_processes',{p_owner_id:actor},value=>value as Array<{id:string;filename:string;status:'ready_for_signer'|'final_review'|'completed'|'failed';signatureCount:number;createdAt:string;mode:'directed'|'open_queue'}>);},
   finalize(documentId:string,actor:string){return database.rpc('v2_finalize_process',{p_document_id:documentId,p_actor_id:actor},value=>value as never);},
   async download(documentId:string,actor:string){const meta=await database.rpc('v2_get_authorized_download',{p_document_id:documentId,p_actor_id:actor},download);const pdf=await database.readPrivateObject(meta.storagePath,meta.byteSize);if(pdf.length!==meta.byteSize||digest(pdf)!==meta.sha256)throw unavailable();return{filename:meta.filename,pdf};},
   async loadStage(documentId:string,actor:string){const value=await database.rpc('v2_get_signing_stage',{p_document_id:documentId,p_actor_id:actor},stage);stages.set(documentId,value);versions.set(value.versionId,{path:value.storagePath,bytes:value.byteSize,hash:value.baseSha256});return value;},

@@ -4,8 +4,9 @@ import {V2HttpSigningApi} from '../../../src/v2/http-api';
 import type {SigningFlags} from '../../../src/v2/policy';
 import {SigningWorkflow, type LocalSigner} from '../../../src/v2/signing-workflow';
 import type {AuthPort, AuthenticatedUser} from './supabase-auth';
-import type {AdminAudit,AdminUser,CreatedProcess, FunctionalV2Client, ProcessStatus, Receipt} from './functional-client';
+import type {AdminAudit,AdminUser,Contact,CreatedProcess,FunctionalV2Client,ProcessStatus,ProcessSummary,ProcessVersion,Receipt} from './functional-client';
 import {receiptPresentation, validateSignerEmails, type AppRoute} from './model';
+import {QueueArcade} from './QueueArcade';
 import frogBrand from '../../../public/frog-brand.webp?url';
 import frogSigning from '../../../public/frog-signing.webp?url';
 
@@ -16,6 +17,7 @@ export type FunctionalAppDependencies = {
   localSigner: LocalSigner;
   signingFlags: SigningFlags;
 };
+const sha256=async(value:string)=>[...new Uint8Array(await crypto.subtle.digest('SHA-256',new TextEncoder().encode(value)))].map(byte=>byte.toString(16).padStart(2,'0')).join('');
 
 function FrogTrail() {
   return <div className="frog-trail" role="img" aria-label="Rana saltando entre documentos PDF">
@@ -120,7 +122,7 @@ function LoginView({dependencies, route, onSignedIn}: {
 function AppHeader({user,guest,onSignOut}: {user: AuthenticatedUser;guest?:boolean; onSignOut: () => void}) {
   return <header className="app-header">
     <Brand/>
-    <nav aria-label="Cuenta">{!guest&&<><a href="/perfil">Perfil</a><a href="/administracion">Administración</a></>}<span className="account-email">{user.email}</span><button className="text-button" type="button" onClick={onSignOut}>Salir</button></nav>
+    <nav aria-label="Cuenta">{!guest&&<><a href="/">Procesos</a><a href="/perfil">Perfil</a><a href="/administracion">Administración</a></>}<span className="account-email">{user.email}</span><button className="text-button" type="button" onClick={onSignOut}>Salir</button></nav>
   </header>;
 }
 
@@ -159,26 +161,29 @@ function OwnerWorkspace({dependencies}: {dependencies: FunctionalAppDependencies
   const [status, setStatus] = useState<ProcessStatus>();
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState('');
+  const[mode,setMode]=useState<'directed'|'open_queue'>('directed');const[processMessage,setProcessMessage]=useState('');const[expected,setExpected]=useState('');const[accessSecret,setAccessSecret]=useState('');const[contacts,setContacts]=useState<Contact[]>([]);const[saveContacts,setSaveContacts]=useState(false);
+  const[processes,setProcesses]=useState<ProcessSummary[]>([]);useEffect(()=>{void Promise.all([dependencies.client.listContacts().then(setContacts),dependencies.client.listProcesses().then(setProcesses)]).catch(()=>{});},[dependencies.client]);
   const create = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault(); setMessage('');
-    const checked = validateSignerEmails(signers);
+    const checked = mode==='open_queue'?{ok:true as const,emails:[]}:validateSignerEmails(signers);
     const pdf = file.current?.files?.[0];
     if (!checked.ok) {setMessage(checked.message); return;}
     if (!pdf) {setMessage('Selecciona el PDF que quieres firmar.'); return;}
     setBusy(true);
     try {
-      const value = await dependencies.client.createProcess({pdf, signers: checked.emails});
+      const value = await dependencies.client.createProcess({pdf,signers:checked.emails,mode,message:processMessage,expectedSignatures:mode==='open_queue'&&expected?Number(expected):null,accessSecretHash:mode==='open_queue'&&accessSecret?await sha256(accessSecret):null});
+      if(mode==='directed'&&saveContacts)await Promise.allSettled(checked.emails.map(email=>dependencies.client.saveContact(email,'')));
       setCreated(value);
       setStatus({id: value.id, filename: value.filename, status: value.status, signatureCount: 0,
-        stages: checked.emails.map((_email, index) => ({ordinal: index + 1, status: 'ready_for_signer', current: index === 0}))});
-      setMessage('Proceso creado. Comparte el enlace con las personas firmantes en el orden indicado.');
+        stages: checked.emails.length?checked.emails.map((_email,index)=>({ordinal:index+1,status:'ready_for_signer' as const,current:index===0})):[{ordinal:1,status:'ready_for_signer',current:false}]});
+      setMessage(mode==='open_queue'?'Ronda abierta creada. Comparte el enlace para que cada persona tome un turno.':'Proceso creado. Las invitaciones se enviarán en el orden indicado.');
     } catch {setMessage('No pudimos crear el proceso. Revisa el PDF y vuelve a intentarlo.');}
     finally {setBusy(false);}
   };
-  const signingUrl = created ? `${dependencies.origin}/firmar/${created.id}` : '';
+  const signingUrl = created ? `${dependencies.origin}/${mode==='open_queue'?'ronda':'procesos'}/${created.id}` : '';
   return <main className="workspace-main">
     <section className="workspace-intro">
-      <div><p className="eyebrow">PANEL DE PROPIETARIO</p><h1>Un PDF. Un turno cada vez.</h1><p>Define el orden y conserva un enlace de seguimiento privado.</p></div>
+      <div><p className="eyebrow">MESA DOCUMENTAL</p><h1>Un PDF. Dos maneras de hacerlo avanzar.</h1><p>Organiza firmas dirigidas o abre una ronda; cada firmante elige certificado local o firma externa.</p></div>
       <FrogTrail/>
     </section>
     <div className="workspace-grid">
@@ -188,41 +193,48 @@ function OwnerWorkspace({dependencies}: {dependencies: FunctionalAppDependencies
           <label htmlFor={`${id}-pdf`}>Documento PDF</label>
           <input ref={file} id={`${id}-pdf`} type="file" accept=".pdf,application/pdf" required onChange={event => setSelectedName(event.target.files?.[0]?.name ?? '')}/>
           <p className="field-help">{selectedName || 'PDF de hasta 10 MB. El original se conserva como primera versión.'}</p>
-          <fieldset><legend>Personas firmantes, en orden</legend>
+          <fieldset className="mode-picker"><legend>Tipo de proceso</legend><label><input type="radio" name="mode" checked={mode==='directed'} onChange={()=>setMode('directed')}/> Firma dirigida</label><label><input type="radio" name="mode" checked={mode==='open_queue'} onChange={()=>setMode('open_queue')}/> Ronda abierta</label></fieldset>
+          <label htmlFor={`${id}-message`}>Mensaje para las personas firmantes <small>Opcional</small></label><textarea id={`${id}-message`} maxLength={2000} value={processMessage} onChange={event=>setProcessMessage(event.target.value)}/>
+          {mode==='directed'?<fieldset><legend>Personas firmantes, en orden</legend>
             {signers.map((value, index) => <div className="signer-row" key={index}>
               <span className="signer-order" aria-hidden="true">{index + 1}</span>
               <label className="sr-only" htmlFor={`${id}-signer-${index}`}>Correo de la persona {index + 1}</label>
               <input id={`${id}-signer-${index}`} type="email" value={value} placeholder={`Correo de la persona ${index + 1}`} required maxLength={254} onChange={event => setSigners(current => current.map((email, at) => at === index ? event.target.value : email))}/>
               {signers.length > 1 && <button className="icon-button" type="button" aria-label={`Quitar persona ${index + 1}`} onClick={() => setSigners(current => current.filter((_email, at) => at !== index))}>×</button>}
             </div>)}
-          </fieldset>
-          <button className="secondary-button" type="button" disabled={signers.length >= 20} onClick={() => setSigners(current => [...current, ''])}>Añadir otra persona</button>
+          </fieldset>:<fieldset><legend>Configuración de la ronda</legend><label htmlFor={`${id}-expected`}>Número previsto de firmas <small>Opcional</small></label><input id={`${id}-expected`} type="number" min="1" max="20" value={expected} onChange={event=>setExpected(event.target.value)}/><label htmlFor={`${id}-access`}>Clave de acceso <small>Opcional</small></label><input id={`${id}-access`} type="password" autoComplete="new-password" maxLength={200} value={accessSecret} onChange={event=>setAccessSecret(event.target.value)}/><small>Solo se envía un hash; conserva la clave para compartirla.</small></fieldset>}
+          {mode==='directed'&&<><button className="secondary-button" type="button" disabled={signers.length >= 20} onClick={() => setSigners(current => [...current, ''])}>Añadir otra persona</button><label className="save-contact"><input type="checkbox" checked={saveContacts} onChange={event=>setSaveContacts(event.target.checked)}/> Guardar en contactos frecuentes</label>{contacts.length>0&&<details className="contact-agenda"><summary>Elegir contactos frecuentes ({contacts.length})</summary><div>{contacts.map(contact=><button className="contact-chip" type="button" key={contact.id} onClick={()=>setSigners(current=>current.includes(contact.email)?current:[...current.filter(Boolean),contact.email])}>{contact.displayName||contact.email}</button>)}</div></details>}</>}
           <button type="submit" disabled={busy}>{busy ? 'Creando proceso…' : 'Crear proceso'}</button>
         </form>
       </details>
       <section className={`task-card share-card${created ? ' is-active' : ' is-inactive'}`} aria-labelledby={`${id}-share-title`}>
         <p className="step-kicker">PASO 2</p><h2 id={`${id}-share-title`}>Compartir y seguir</h2>
         {created ? <>
-          <p>Envía este enlace únicamente a las personas incluidas. El correo autenticado decide quién puede usar cada turno.</p>
+          <p>{mode==='open_queue'?'Quien tenga este enlace podrá entrar a la cola y tomar un turno cuando llegue a la primera posición.':'Las invitaciones personales se envían por correo; este enlace abre el seguimiento del propietario.'}</p>
           <label htmlFor={`${id}-link`}>Enlace de firma</label><div className="copy-row"><input id={`${id}-link`} value={signingUrl} readOnly/><button type="button" onClick={() => {void navigator.clipboard?.writeText(signingUrl).then(() => setMessage('Enlace copiado.')).catch(() => setMessage('Copia el enlace manualmente.'));}}>Copiar</button></div>
-          <a className="button-link secondary-link" href={`/procesos/${created.id}`}>Abrir seguimiento</a>
+          <div className="share-actions"><a className="button-link secondary-link" href={`/procesos/${created.id}`}>Abrir seguimiento</a><a className="button-link whatsapp-button" target="_blank" rel="noreferrer" href={`https://wa.me/?text=${encodeURIComponent(`Firma ${created.filename}: ${signingUrl}`)}`}>Compartir por WhatsApp</a><a className="button-link secondary-link" href={`mailto:?subject=${encodeURIComponent('Firma pendiente en LeapSign')}&body=${encodeURIComponent(signingUrl)}`}>Compartir por correo</a></div>
         </> : <p>Esta sección se activará cuando el PDF y la lista estén listos.</p>}
       </section>
     </div>
     {message && <p className="workspace-message" role="status">{message}</p>}
     {status && <ProcessProgress client={dependencies.client} status={status}/>}
+    <section className="task-card process-board"><div className="section-heading"><div><p className="step-kicker">MIS PROCESOS</p><h2>Agenda y seguimiento</h2></div><span className="status-badge">{processes.length} procesos</span></div>{processes.length?<div className="process-list">{processes.map(process=><a key={process.id} href={`/procesos/${process.id}`}><span><strong>{process.filename}</strong><small>{process.mode==='open_queue'?'Ronda abierta':'Firma dirigida'} · {new Date(process.createdAt).toLocaleDateString('es-EC')}</small></span><span>{process.signatureCount} firmas · {process.status}</span></a>)}</div>:<p>Tus procesos nuevos aparecerán aquí para continuar el seguimiento.</p>}</section>
     <details className="quiet-details owner-help"><summary>Privacidad y límites de la validación</summary><p>Los certificados se usan en el dispositivo de cada firmante. LeapSign recibe el PDF resultante y aplica su política técnica; no promete compatibilidad o validez universal.</p></details>
   </main>;
 }
 
 function TrackingWorkspace({dependencies, processId}: {dependencies: FunctionalAppDependencies; processId: string}) {
   const [status, setStatus] = useState<ProcessStatus>();
+  const[versions,setVersions]=useState<ProcessVersion[]>([]);const[shareUrl,setShareUrl]=useState('');
   const [message, setMessage] = useState('Cargando seguimiento…');
   const refresh = useCallback(async (signal?: AbortSignal) => {
-    try {setStatus(await dependencies.client.getProcess(processId, signal)); setMessage('');}
+    try {const[next,history]=await Promise.all([dependencies.client.getProcess(processId,signal),dependencies.client.listVersions(processId,signal)]);setStatus(next);setVersions(history);setMessage('');}
     catch {if (!signal?.aborted) setMessage('No pudimos actualizar el proceso. Comprueba el enlace e inténtalo de nuevo.');}
   }, [dependencies.client, processId]);
   const finalize=useCallback(async()=>{setMessage('Cerrando el proceso…');try{setStatus(await dependencies.client.finalizeProcess(processId));setMessage('Proceso cerrado. El PDF final ya está disponible.');}catch{setMessage('No pudimos cerrar el proceso. Confirma que todas las firmas estén guardadas.');}},[dependencies.client,processId]);
+  const action=useCallback(async(value:'pause'|'resume'|'release_turn'|'cancel'|'purge')=>{setMessage('Aplicando acción…');try{await dependencies.client.processAction(processId,value);await refresh();setMessage('Acción registrada en el historial.');}catch{setMessage('No pudimos completar la acción.');}},[dependencies.client,processId,refresh]);
+  const rollback=useCallback(async(versionId:string)=>{setMessage('Restaurando versión…');try{await dependencies.client.processAction(processId,'rollback',versionId,'Restauración solicitada por el propietario');await refresh();setMessage('Versión restaurada; los intentos anteriores quedaron invalidados.');}catch{setMessage('No pudimos restaurar esa versión.');}},[dependencies.client,processId,refresh]);
+  const share=useCallback(async()=>{try{const value=await dependencies.client.createFinalShare(processId);setShareUrl(value.url);setMessage('Enlace final creado por 48 horas.');}catch{setMessage('El enlace final solo está disponible para un proceso completado.');}},[dependencies.client,processId]);
   useEffect(() => {
     const controller = new AbortController();
     void refresh(controller.signal);
@@ -233,6 +245,7 @@ function TrackingWorkspace({dependencies, processId}: {dependencies: FunctionalA
     <div className="tracking-heading"><div><p className="eyebrow">SEGUIMIENTO PRIVADO</p><h1>Así avanza el documento</h1></div><button className="secondary-button" type="button" onClick={() => {void refresh();}}>Actualizar</button></div>
     {message && <p className="workspace-message" role="status">{message}</p>}
     {status && <ProcessProgress client={dependencies.client} status={status} onFinalize={status.status==='final_review'?()=>{void finalize();}:undefined}/>}
+    {status&&<section className="task-card lifecycle-card"><p className="step-kicker">CONTROL DEL PROCESO</p><h2>Agenda, incidencias e historial</h2><div className="lifecycle-actions"><button className="secondary-button" onClick={()=>void action('pause')}>Pausar</button><button className="secondary-button" onClick={()=>void action('resume')}>Reanudar</button><button className="secondary-button" onClick={()=>void action('release_turn')}>Liberar turno</button><button className="danger-button" onClick={()=>void action('cancel')}>Cancelar</button></div><details open><summary>Historial de versiones ({versions.length})</summary><ol className="version-list">{versions.map(version=><li key={version.id}><span><strong>Firma {version.signatureCount}</strong><small>{new Date(version.createdAt).toLocaleString('es-EC')} · {version.sha256.slice(0,12)}…</small></span>{version.current?<em>Actual</em>:<button className="text-button" onClick={()=>void rollback(version.id)}>Restaurar</button>}</li>)}</ol></details>{status.status==='completed'&&<div className="final-share"><button onClick={()=>void share()}>Crear enlace final</button>{shareUrl&&<><input readOnly value={shareUrl}/><a className="button-link whatsapp-button" target="_blank" rel="noreferrer" href={`https://wa.me/?text=${encodeURIComponent(`Documento final: ${shareUrl}`)}`}>WhatsApp</a></>}</div>}<details><summary>Zona de eliminación</summary><p>La purga se procesa de forma segura y conserva el registro técnico mínimo.</p><button className="danger-button" onClick={()=>void action('purge')}>Solicitar eliminación</button></details></section>}
     <details className="quiet-details"><summary>Identificador del proceso</summary><code>{processId}</code></details>
   </main>;
 }
@@ -275,6 +288,12 @@ function SignerWorkspace({dependencies, user, token}: {dependencies: FunctionalA
   </main>;
 }
 
+function RoundWorkspace({dependencies,processId,onClaimed}:{dependencies:FunctionalAppDependencies;processId:string;onClaimed:(user:AuthenticatedUser)=>void}){const[id]=useState(processId),[access,setAccess]=useState(''),[round,setRound]=useState<Awaited<ReturnType<FunctionalV2Client['roundAccess']>>>(),[queue,setQueue]=useState<Awaited<ReturnType<FunctionalV2Client['queueState']>>>(),[message,setMessage]=useState('Consulta la ronda para entrar en la cola.');const load=async()=>{try{const hash=access?await sha256(access):null;setRound(await dependencies.client.roundAccess(id,hash));setMessage('Ronda disponible.');}catch{setMessage('La ronda no está disponible o la clave no es correcta.');}};const join=async(event:FormEvent<HTMLFormElement>)=>{event.preventDefault();const data=new FormData(event.currentTarget);try{const hash=access?await sha256(access):null;setQueue(await dependencies.client.joinQueue(id,{email:String(data.get('email')||'').trim().toLowerCase()||null,displayName:String(data.get('name')||'').trim()||null,accessSecretHash:hash}));setMessage('Ya estás en la cola. Esta página actualizará tu posición.');}catch{setMessage('No fue posible entrar en la cola.');}};useEffect(()=>{if(!queue||queue.status!=='waiting')return;const timer=window.setInterval(()=>{void dependencies.client.queueState(id).then(setQueue).catch(()=>{});},8000);return()=>window.clearInterval(timer);},[dependencies.client,id,queue]);const claim=async()=>{try{await dependencies.client.claimTurn(id);const guest=await dependencies.client.restoreGuest();onClaimed({id:guest.actorId,email:guest.email,accessToken:'guest-session'});history.replaceState(null,'',`/firmar/proceso/${id}`);}catch{setMessage('El turno aún no está disponible. Mantén esta página abierta.');}};return <main className="workspace-main narrow-workspace"><p className="eyebrow">RONDA ABIERTA</p><h1>{round?.filename??'Mesa de firmas'}</h1>{round?.message&&<blockquote>{round.message}</blockquote>}<p role="status" className="workspace-message">{message}</p>{!round?<section className="task-card"><label htmlFor="round-access">Clave de acceso <small>Si fue configurada</small></label><input id="round-access" type="password" autoComplete="off" value={access} onChange={event=>setAccess(event.target.value)}/><button onClick={()=>void load()}>Consultar ronda</button></section>:!queue?<form className="task-card" onSubmit={join}><h2>Entrar en la cola</h2><label htmlFor="queue-name">Nombre visible <small>Opcional</small></label><input id="queue-name" name="name" maxLength={120}/><label htmlFor="queue-email">Correo <small>Para avisarte del turno</small></label><input id="queue-email" name="email" type="email" maxLength={254}/><button>Tomar un lugar</button></form>:<><section className="progress-card"><p className="step-kicker">TU POSICIÓN</p><h2>{queue.status==='active'?'Tu turno está listo':`Lugar ${queue.position} en la cola`}</h2><p>{round.signatureCount} firmas recibidas{round.expectedSignatures?` de ${round.expectedSignatures} previstas`:''}.</p><button disabled={queue.status!=='active'&&queue.position!==1} onClick={()=>void claim()}>Abrir mi turno de firma</button><button className="secondary-button" onClick={()=>void dependencies.client.releaseTurn(id).then(()=>setMessage('Saliste de la cola.'))}>Salir de la cola</button></section><QueueArcade client={dependencies.client}/></>}</main>}
+
+function FinalDownloadWorkspace({dependencies,shareId}:{dependencies:FunctionalAppDependencies;shareId:string}){const[message,setMessage]=useState('Preparando el documento final…');useEffect(()=>{const token=new URLSearchParams(location.hash.slice(1)).get('token')??'';void dependencies.client.downloadFinalShare(shareId,token).then(bytes=>{const url=URL.createObjectURL(new Blob([new Uint8Array(bytes).buffer],{type:'application/pdf'}));const link=document.createElement('a');link.href=url;link.download='LeapSign-final.pdf';link.click();URL.revokeObjectURL(url);setMessage('Descarga iniciada. El enlace es temporal y no muestra datos de participantes.');}).catch(()=>setMessage('El enlace final expiró, fue revocado o no es válido.'));},[dependencies.client,shareId]);return <main className="not-found"><FrogTrail/><p className="eyebrow">DOCUMENTO FINAL</p><h1>Descarga privada</h1><p role="status">{message}</p></main>}
+
+function LegalWorkspace({page}:{page:'privacidad'|'seguridad'|'condiciones'}){const copy={privacidad:['Privacidad','Los PDFs se almacenan de forma privada. El P12/PFX y su contraseña permanecen en el navegador y nunca se incluyen en solicitudes, registros ni telemetría.'],seguridad:['Seguridad','El P12/PFX y su contraseña permanecen en el navegador. Cada firma se valida contra el PDF vigente, conserva las firmas anteriores y usa idempotencia para evitar duplicados. La revocación desconocida o inaccesible falla cerrado.'],condiciones:['Condiciones de uso','LeapSign informa por separado integridad criptográfica, confianza de cadena, vigencia y revocación. El software no determina por sí solo el resultado jurídico.']}[page];return <main className="workspace-main narrow-workspace"><p className="eyebrow">LEAPSIGN V2</p><h1>{copy[0]}</h1><section className="task-card"><p>{copy[1]}</p><p><strong>Compatibilidad inicial:</strong> certificados encadenados a BCE.</p><a href="/">Volver a LeapSign</a></section></main>}
+
 function NotFound() {
   return <main className="not-found"><FrogTrail/><p className="eyebrow">ENLACE NO DISPONIBLE</p><h1>Esta ruta no corresponde a un proceso.</h1><a className="button-link" href="/">Volver al inicio</a></main>;
 }
@@ -312,9 +331,9 @@ export function FunctionalApp({dependencies, route, initialUser}: {
   if (route.kind === 'not-found') return <div className="leapsign-app"><NotFound/></div>;
   return <div className="leapsign-app">
     <aside className="compatibility-notice" role="note"><strong>Compatibilidad inicial: certificados encadenados a BCE.</strong> Integridad criptográfica, confianza de la cadena y revocación son resultados distintos. LeapSign no declara por sí solo validez jurídica.</aside>
-    {user ? <>
+    {route.kind==='legal'?<LegalWorkspace page={route.page}/>:route.kind==='final'?<FinalDownloadWorkspace dependencies={dependencies} shareId={route.shareId}/>:route.kind==='round'&&!signerDocument?<RoundWorkspace dependencies={dependencies} processId={route.processId} onClaimed={next=>{setUser(next);setSignerDocument(route.processId);}}/>:user ? <>
       <AppHeader user={user} guest={guest} onSignOut={() => {void signOut();}}/>
-      {(route.kind === 'signer'||route.kind==='signer-session')&&signerDocument ? <SignerWorkspace dependencies={dependencies} user={user} token={signerDocument}/>
+      {(route.kind === 'signer'||route.kind==='signer-session'||route.kind==='round')&&signerDocument ? <SignerWorkspace dependencies={dependencies} user={user} token={signerDocument}/>
         : route.kind === 'tracking' ? <TrackingWorkspace dependencies={dependencies} processId={route.processId}/>
         : route.kind === 'verification' ? <VerificationWorkspace dependencies={dependencies} receiptId={route.receiptId}/>
         : route.kind==='profile'?<ProfileWorkspace user={user}/>
@@ -322,7 +341,7 @@ export function FunctionalApp({dependencies, route, initialUser}: {
         : route.kind==='error'?<ErrorWorkspace status={route.status}/>
         : <OwnerWorkspace dependencies={dependencies}/>}
     </> : sessionMessage?<main className="not-found"><FrogTrail/><h1>Enlace de firma no disponible</h1><p role="alert">{sessionMessage}</p></main>:route.kind==='error'?<ErrorWorkspace status={route.status}/>:<LoginView dependencies={dependencies} route={route} onSignedIn={setUser}/>}
-    <footer className="legal-note">La validación técnica comprueba el PDF recibido según la política publicada; no determina por sí sola la identidad, la confianza ni la validez jurídica. Para otros emisores se mostrará CHAIN_NOT_TRUSTED y el emisor detectado desde el PDF firmado; no subas el certificado por separado.</footer>
+    <footer className="legal-note"><p>La validación técnica comprueba el PDF recibido según la política publicada; no determina por sí sola la identidad, la confianza ni la validez jurídica. Para otros emisores se mostrará CHAIN_NOT_TRUSTED y el emisor detectado desde el PDF firmado; no subas el certificado por separado.</p><nav aria-label="Información legal"><a href="/privacidad">Privacidad</a><a href="/seguridad">Seguridad</a><a href="/condiciones">Condiciones</a></nav></footer>
   </div>;
 }
 

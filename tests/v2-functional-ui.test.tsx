@@ -106,6 +106,9 @@ describe('v2 functional routes and validation', () => {
     expect(parseAppRoute('/confirmar')).toEqual({kind:'confirmation'});
     expect(parseAppRoute('/perfil')).toEqual({kind:'profile'});
     expect(parseAppRoute('/administracion')).toEqual({kind:'administration'});
+    expect(parseAppRoute(`/ronda/${processId}`)).toEqual({kind:'round',processId});
+    expect(parseAppRoute(`/final/${processId}`)).toEqual({kind:'final',shareId:processId});
+    expect(parseAppRoute('/privacidad')).toEqual({kind:'legal',page:'privacidad'});
     expect(parseAppRoute(`/firmar/proceso/${processId}`)).toEqual({kind:'signer-session',processId});
     expect(parseAppRoute('/firmar/../../private')).toEqual({kind: 'not-found'});
     expect(parseAppRoute(`/verificar/${intentId}`)).toEqual({kind:'verification',receiptId:intentId});
@@ -226,9 +229,15 @@ describe('v2 functional app shell', () => {
     expect(html).toContain('accept=".pdf,application/pdf"');
     expect(html).toContain('Correo de la persona 1');
     expect(html).toContain('Añadir otra persona');
+    expect(html).toContain('Firma dirigida');
+    expect(html).toContain('Ronda abierta');
+    expect(html).toContain('contactos frecuentes');
+    expect(html).toContain('Agenda y seguimiento');
     expect(html).toContain('<details');
     expect(html).not.toContain('secret-access-token-never-render');
   });
+
+  it('publishes the privacy and legal boundaries as first-class pages',()=>{const html=renderToStaticMarkup(<FunctionalApp dependencies={dependencies} route={{kind:'legal',page:'seguridad'}}/>);expect(html).toContain('El P12/PFX y su contraseña permanecen en el navegador');expect(html).toContain('revocación desconocida o inaccesible falla cerrado');expect(html).toContain('Compatibilidad inicial');});
 
   it('renders the token-bound local P12/PFX flow through the injected signer port', () => {
     const html = renderToStaticMarkup(<FunctionalApp dependencies={dependencies} route={{kind: 'signer', token: processId}} initialUser={{

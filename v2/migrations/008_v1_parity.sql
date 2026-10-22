@@ -280,6 +280,12 @@ begin
  return result;
 end $$;
 
+create function public.v2_list_processes(p_owner_id uuid)
+returns jsonb language sql security definer set search_path=pg_catalog,signing_v2,pg_temp as $$
+ select coalesce(jsonb_agg(jsonb_build_object('id',d.id,'filename',d.filename,'status',d.status,'signatureCount',v.signature_count,'createdAt',pa.created_at,'mode',pa.mode) order by pa.created_at desc,d.id desc),'[]'::jsonb)
+ from signing_v2.documents d join signing_v2.process_access pa on pa.document_id=d.id and pa.owner_id=p_owner_id join signing_v2.versions v on v.id=d.current_version_id and v.document_id=d.id where d.owner_id=p_owner_id
+$$;
+
 create function public.v2_list_process_incidents(p_document_id uuid,p_actor_id uuid)
 returns jsonb language plpgsql security definer set search_path=pg_catalog,signing_v2,pg_temp as $$
 declare result jsonb;
@@ -406,6 +412,7 @@ alter function public.v2_list_contacts(uuid) owner to postgres;
 alter function public.v2_delete_contact(uuid,uuid) owner to postgres;
 alter function public.v2_create_parity_process(uuid,text,uuid,uuid,text,text,integer,integer,real,real,integer,text[],text[],text,text,integer,text) owner to postgres;
 alter function public.v2_list_process_versions(uuid,uuid) owner to postgres;
+alter function public.v2_list_processes(uuid) owner to postgres;
 alter function public.v2_list_process_incidents(uuid,uuid) owner to postgres;
 alter function public.v2_report_process_incident(uuid,uuid,text,text) owner to postgres;
 
@@ -427,6 +434,7 @@ revoke all on function public.v2_list_contacts(uuid) from public,anon,authentica
 revoke all on function public.v2_delete_contact(uuid,uuid) from public,anon,authenticated,service_role;
 revoke all on function public.v2_create_parity_process(uuid,text,uuid,uuid,text,text,integer,integer,real,real,integer,text[],text[],text,text,integer,text) from public,anon,authenticated,service_role;
 revoke all on function public.v2_list_process_versions(uuid,uuid) from public,anon,authenticated,service_role;
+revoke all on function public.v2_list_processes(uuid) from public,anon,authenticated,service_role;
 revoke all on function public.v2_list_process_incidents(uuid,uuid) from public,anon,authenticated,service_role;
 revoke all on function public.v2_report_process_incident(uuid,uuid,text,text) from public,anon,authenticated,service_role;
 grant execute on function public.v2_upsert_contact(uuid,uuid,text,text) to service_role;
@@ -446,6 +454,7 @@ grant execute on function public.v2_list_contacts(uuid) to service_role;
 grant execute on function public.v2_delete_contact(uuid,uuid) to service_role;
 grant execute on function public.v2_create_parity_process(uuid,text,uuid,uuid,text,text,integer,integer,real,real,integer,text[],text[],text,text,integer,text) to service_role;
 grant execute on function public.v2_list_process_versions(uuid,uuid) to service_role;
+grant execute on function public.v2_list_processes(uuid) to service_role;
 grant execute on function public.v2_list_process_incidents(uuid,uuid) to service_role;
 grant execute on function public.v2_report_process_incident(uuid,uuid,text,text) to service_role;
 

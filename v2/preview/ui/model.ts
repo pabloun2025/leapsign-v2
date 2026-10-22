@@ -5,6 +5,9 @@ export type AppRoute =
   | {kind: 'signer'; token: string}
   | {kind: 'signer-session'; processId: string}
   | {kind: 'tracking'; processId: string}
+  | {kind:'round';processId:string}
+  | {kind:'final';shareId:string}
+  | {kind:'legal';page:'privacidad'|'seguridad'|'condiciones'}
   | {kind:'verification';receiptId:string}
   | {kind: 'recovery'}
   | {kind: 'register'}
@@ -28,10 +31,13 @@ export function parseAppRoute(pathname: string): AppRoute {
   if(parts.length===1&&parts[0]==='confirmar')return{kind:'confirmation'};
   if(parts.length===1&&parts[0]==='perfil')return{kind:'profile'};
   if(parts.length===1&&parts[0]==='administracion')return{kind:'administration'};
+  if(parts.length===1&&['privacidad','seguridad','condiciones'].includes(parts[0]))return{kind:'legal',page:parts[0] as 'privacidad'|'seguridad'|'condiciones'};
   if(parts.length===1&&['401','403','503'].includes(parts[0]))return{kind:'error',status:Number(parts[0]) as 401|403|503};
   if (parts.length === 2 && parts[0] === 'procesos' && processIdPattern.test(parts[1])) {
     return {kind: 'tracking', processId: parts[1].toLowerCase()};
   }
+  if(parts.length===2&&parts[0]==='ronda'&&processIdPattern.test(parts[1]))return{kind:'round',processId:parts[1].toLowerCase()};
+  if(parts.length===2&&parts[0]==='final'&&processIdPattern.test(parts[1]))return{kind:'final',shareId:parts[1].toLowerCase()};
   if (parts.length === 2 && parts[0] === 'firmar' && signerTokenPattern.test(parts[1])) {
     return {kind: 'signer', token: parts[1]};
   }

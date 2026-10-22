@@ -24,6 +24,10 @@ export type PublicVerification={processId:string;receiptId:string;signedSha256:s
 export type GuestSession={actorId:string;documentId:string;email:string};
 export type AdminUser={id:string;email:string;status:'active'|'suspended'|'unconfirmed';createdAt:string;lastSignInAt:string|null};
 export type AdminAudit={id:number;administratorId:string;action:string;targetUserId:string|null;targetEmail:string|null;createdAt:string};
+export type Contact={id:string;email:string;displayName:string|null;usageCount:number;lastUsedAt:string|null};
+export type ProcessVersion={id:string;sha256:string;signatureCount:number;createdAt:string;current:boolean};
+export type ProcessSummary={id:string;filename:string;status:CreatedProcess['status'];signatureCount:number;createdAt:string;mode:'directed'|'open_queue'};
+export type QueueState={actorId?:string;status:'waiting'|'active'|'completed'|'left';position:number;leaseExpiresAt?:string|null};
 
 export class FunctionalClientError extends Error {
   constructor(readonly code: 'INVALID_INPUT' | 'UNAUTHENTICATED' | 'UNAVAILABLE' | 'INVALID_RESPONSE' | 'ABORTED') {
@@ -47,7 +51,7 @@ function createdProcess(value: unknown): CreatedProcess {
       typeof value.id !== 'string' || !isProcessId(value.id) ||
       typeof value.filename !== 'string' || !filenamePattern.test(value.filename) ||
       !['ready_for_signer', 'final_review', 'completed', 'failed'].includes(String(value.status)) ||
-      !Number.isInteger(value.signerCount) || Number(value.signerCount) < 1 || Number(value.signerCount) > 20) {
+      !Number.isInteger(value.signerCount) || Number(value.signerCount) < 0 || Number(value.signerCount) > 20) {
     throw new FunctionalClientError('INVALID_RESPONSE');
   }
   return value as CreatedProcess;
@@ -174,30 +178,51 @@ export class FunctionalV2Client {
   async adminUserAction(id:string,action:'resend'|'recover'|'suspend'|'reactivate',signal?:AbortSignal){if(!isProcessId(id))throw new FunctionalClientError('INVALID_INPUT');await this.request(`/api/v2/admin/users/${id}/${action}`,{method:'POST',headers:{'Content-Type':'application/json'},body:'{}'},signal);}
   async listAdminAudit(page=1,signal?:AbortSignal){const value=await this.json(await this.request(`/api/v2/admin/audit?page=${page}`,{method:'GET'},signal));if(!object(value)||!exact(value,['events','page'])||value.page!==page||!Array.isArray(value.events)||!value.events.every(event=>object(event)&&exact(event,['id','administratorId','action','targetUserId','targetEmail','createdAt'])&&Number.isInteger(event.id)&&typeof event.administratorId==='string'&&typeof event.action==='string'&&typeof event.createdAt==='string'))throw new FunctionalClientError('INVALID_RESPONSE');return value.events as AdminAudit[];}
 
-  async createProcess(input: {pdf: File; signers: string[]}, signal?: AbortSignal) {
-    const checked = validateSignerEmails(input.signers);
+  async createProcess(input: {pdf: File; signers: string[];mode?:'directed'|'open_queue';message?:string;expectedSignatures?:number|null;accessSecretHash?:string|null}, signal?: AbortSignal) {
+    const mode=input.mode??'directed';const checked=mode==='open_queue'?{ok:true as const,emails:[]}:validateSignerEmails(input.signers);
     if (!checked.ok || !(input.pdf instanceof File) || !filenamePattern.test(input.pdf.name) ||
         input.pdf.size < 5 || input.pdf.size > MAX_PDF_BYTES || (input.pdf.type && input.pdf.type !== 'application/pdf')) {
       throw new FunctionalClientError('INVALID_INPUT');
     }
     const pdf = new Uint8Array(await input.pdf.arrayBuffer());
     if (new TextDecoder().decode(pdf.subarray(0, 5)) !== '%PDF-') throw new FunctionalClientError('INVALID_INPUT');
+    const options={mode,message:(input.message??'').normalize('NFC').trim(),expectedSignatures:mode==='directed'?checked.emails.length:input.expectedSignatures??null,accessSecretHash:mode==='open_queue'?input.accessSecretHash??null:null};
+    if(options.message.length>2000||(options.expectedSignatures!==null&&(!Number.isInteger(options.expectedSignatures)||options.expectedSignatures<1||options.expectedSignatures>20))||(options.accessSecretHash!==null&&!/^[a-f0-9]{64}$/.test(options.accessSecretHash)))throw new FunctionalClientError('INVALID_INPUT');
     const value = await this.json(await this.request('/api/v2/processes', {
       method: 'POST',
       headers: {
         'Content-Type': 'application/pdf',
         'X-LeapSign-Filename': encodeURIComponent(input.pdf.name),
         'X-LeapSign-Signers': base64Url(JSON.stringify(checked.emails)),
+        'X-LeapSign-Process':base64Url(JSON.stringify(options)),
       },
       body: pdf,
     }, signal));
     return createdProcess(value);
   }
 
+  async listContacts(signal?:AbortSignal){const value=await this.json(await this.request('/api/v2/contacts',{method:'GET'},signal));if(!object(value)||!exact(value,['contacts'])||!Array.isArray(value.contacts))throw new FunctionalClientError('INVALID_RESPONSE');return value.contacts as Contact[];}
+  async saveContact(email:string,displayName:string,signal?:AbortSignal){const value=await this.json(await this.request('/api/v2/contacts',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({email,displayName})},signal));if(!object(value)||typeof value.id!=='string')throw new FunctionalClientError('INVALID_RESPONSE');return value as Contact;}
+  async deleteContact(id:string,signal?:AbortSignal){if(!isProcessId(id))throw new FunctionalClientError('INVALID_INPUT');await this.request(`/api/v2/contacts/${id}`,{method:'DELETE'},signal);}
+  async processAction(id:string,action:'pause'|'resume'|'release_turn'|'rollback'|'cancel'|'complete'|'purge',versionId:string|null=null,reason='',signal?:AbortSignal){if(!isProcessId(id)||versionId!==null&&!isProcessId(versionId))throw new FunctionalClientError('INVALID_INPUT');return this.json(await this.request(`/api/v2/processes/${id}/actions`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({action,versionId,reason})},signal));}
+  async listVersions(id:string,signal?:AbortSignal){const value=await this.json(await this.request(`/api/v2/processes/${id}/versions`,{method:'GET'},signal));if(!object(value)||!exact(value,['versions'])||!Array.isArray(value.versions))throw new FunctionalClientError('INVALID_RESPONSE');return value.versions as ProcessVersion[];}
+  async reportIncident(id:string,reason:'signature_position'|'wrong_document'|'unreadable_pdf'|'other',note:string,signal?:AbortSignal){return this.json(await this.request(`/api/v2/processes/${id}/incidents`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({reason,note})},signal));}
+  async createFinalShare(id:string,signal?:AbortSignal){const value=await this.json(await this.request(`/api/v2/processes/${id}/final-share`,{method:'POST'},signal));if(!object(value)||typeof value.url!=='string'||!value.url.startsWith(this.options.origin+'/final/'))throw new FunctionalClientError('INVALID_RESPONSE');return value as {id:string;documentId:string;expiresAt:string;url:string};}
+  async downloadFinalShare(id:string,token:string,signal?:AbortSignal){if(!isProcessId(id)||!/^[A-Za-z0-9_-]{43}$/.test(token))throw new FunctionalClientError('INVALID_INPUT');const response=await this.request(`/api/v2/final/${id}`,{method:'GET',headers:{'X-LeapSign-Final':token}},signal);if(response.headers.get('Content-Type')?.split(';')[0]!=='application/pdf')throw new FunctionalClientError('INVALID_RESPONSE');return new Uint8Array(await response.arrayBuffer());}
+  async roundAccess(id:string,accessSecretHash:string|null,signal?:AbortSignal){return await this.json(await this.request(`/api/v2/rounds/${id}/access`,{method:'GET',headers:{...(accessSecretHash?{'X-LeapSign-Access':accessSecretHash}:{})}},signal)) as {id:string;filename:string;message:string;protected:boolean;paused:boolean;expectedSignatures:number|null;signatureCount:number};}
+  async joinQueue(id:string,input:{email:string|null;displayName:string|null;accessSecretHash:string|null},signal?:AbortSignal){return await this.json(await this.request(`/api/v2/rounds/${id}/queue`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(input)},signal)) as QueueState;}
+  async queueState(id:string,signal?:AbortSignal){return await this.json(await this.request(`/api/v2/rounds/${id}/queue`,{method:'GET'},signal)) as QueueState;}
+  async claimTurn(id:string,signal?:AbortSignal){return this.json(await this.request(`/api/v2/rounds/${id}/turn`,{method:'POST'},signal));}
+  async releaseTurn(id:string,signal?:AbortSignal){await this.request(`/api/v2/rounds/${id}/turn`,{method:'DELETE'},signal);}
+  async arcadeLeaderboard(signal?:AbortSignal){const value=await this.json(await this.request('/api/v2/arcade/leaderboard',{method:'GET'},signal));return object(value)&&Array.isArray(value.records)?value.records as Array<{alias:string;score:number;createdAt:string}>:[];}
+  async startArcade(signal?:AbortSignal){return await this.json(await this.request('/api/v2/arcade/start',{method:'POST'},signal)) as {ticket:string;seed:number;expiresAt:string};}
+  async finishArcade(ticket:string,alias:string,inputs:number[],signal?:AbortSignal){return this.json(await this.request('/api/v2/arcade/finish',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({ticket,alias,inputs})},signal));}
+
   async getProcess(id: string, signal?: AbortSignal) {
     if (!isProcessId(id)) throw new FunctionalClientError('INVALID_INPUT');
     return processStatus(await this.json(await this.request(`/api/v2/processes/${id.toLowerCase()}`, {method: 'GET'}, signal)));
   }
+  async listProcesses(signal?:AbortSignal){const value=await this.json(await this.request('/api/v2/processes',{method:'GET'},signal));if(!object(value)||!exact(value,['processes'])||!Array.isArray(value.processes))throw new FunctionalClientError('INVALID_RESPONSE');return value.processes as ProcessSummary[];}
 
   async finalizeProcess(id:string,signal?:AbortSignal){
     if(!isProcessId(id))throw new FunctionalClientError('INVALID_INPUT');
