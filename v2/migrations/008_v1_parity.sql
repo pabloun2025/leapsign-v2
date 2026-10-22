@@ -310,6 +310,17 @@ begin
  return jsonb_build_object('id',share.id,'documentId',share.document_id,'expiresAt',share.expires_at);
 end $$;
 
+create function public.v2_resolve_final_share(p_share_id uuid,p_token_hash text)
+returns jsonb language plpgsql security definer set search_path=pg_catalog,signing_v2,pg_temp as $$
+declare result jsonb;
+begin
+ if p_token_hash!~'^[a-f0-9]{64}$' then raise exception 'FINAL_SHARE_UNAVAILABLE';end if;
+ select jsonb_build_object('documentId',d.id,'versionId',v.id,'filename',d.filename,'storagePath',v.storage_path,'byteSize',v.byte_size,'sha256',v.sha256,'expiresAt',s.expires_at) into result
+ from signing_v2.final_shares s join signing_v2.documents d on d.id=s.document_id and d.current_version_id=s.version_id and d.status='completed' join signing_v2.versions v on v.id=s.version_id and v.document_id=d.id
+ where s.id=p_share_id and s.token_hash=p_token_hash and s.revoked_at is null and s.expires_at>now();
+ if result is null then raise exception 'FINAL_SHARE_UNAVAILABLE';end if;return result;
+end $$;
+
 create function public.v2_start_arcade(p_ticket_hash text,p_origin_hash text,p_seed integer)
 returns jsonb language plpgsql security definer set search_path=pg_catalog,signing_v2,pg_temp as $$
 declare run signing_v2.arcade_runs%rowtype;
@@ -378,6 +389,7 @@ alter function public.v2_join_queue(uuid,uuid,text,text,text) owner to postgres;
 alter function public.v2_claim_turn(uuid,uuid,text) owner to postgres;
 alter function public.v2_process_action(uuid,uuid,text,uuid,text) owner to postgres;
 alter function public.v2_create_final_share(uuid,uuid,text,timestamptz) owner to postgres;
+alter function public.v2_resolve_final_share(uuid,text) owner to postgres;
 alter function public.v2_start_arcade(text,text,integer) owner to postgres;
 alter function public.v2_finish_arcade(text,text,integer) owner to postgres;
 alter function public.v2_claim_lifecycle_jobs(integer) owner to postgres;
@@ -397,6 +409,7 @@ revoke all on function public.v2_join_queue(uuid,uuid,text,text,text) from publi
 revoke all on function public.v2_claim_turn(uuid,uuid,text) from public,anon,authenticated,service_role;
 revoke all on function public.v2_process_action(uuid,uuid,text,uuid,text) from public,anon,authenticated,service_role;
 revoke all on function public.v2_create_final_share(uuid,uuid,text,timestamptz) from public,anon,authenticated,service_role;
+revoke all on function public.v2_resolve_final_share(uuid,text) from public,anon,authenticated,service_role;
 revoke all on function public.v2_start_arcade(text,text,integer) from public,anon,authenticated,service_role;
 revoke all on function public.v2_finish_arcade(text,text,integer) from public,anon,authenticated,service_role;
 revoke all on function public.v2_claim_lifecycle_jobs(integer) from public,anon,authenticated,service_role;
@@ -414,6 +427,7 @@ grant execute on function public.v2_join_queue(uuid,uuid,text,text,text) to serv
 grant execute on function public.v2_claim_turn(uuid,uuid,text) to service_role;
 grant execute on function public.v2_process_action(uuid,uuid,text,uuid,text) to service_role;
 grant execute on function public.v2_create_final_share(uuid,uuid,text,timestamptz) to service_role;
+grant execute on function public.v2_resolve_final_share(uuid,text) to service_role;
 grant execute on function public.v2_start_arcade(text,text,integer) to service_role;
 grant execute on function public.v2_finish_arcade(text,text,integer) to service_role;
 grant execute on function public.v2_claim_lifecycle_jobs(integer) to service_role;

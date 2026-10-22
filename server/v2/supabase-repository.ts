@@ -24,6 +24,7 @@ function round(value:unknown){if(!object(value)||!uuid(value.id)||!filename(valu
 function queue(value:unknown){if(!object(value)||!uuid(value.actorId)||!['waiting','active','completed','left'].includes(String(value.status))||!Number.isInteger(value.position)||(value.leaseExpiresAt!==null&&typeof value.leaseExpiresAt!=='string'))throw unavailable();return value as {actorId:string;status:'waiting'|'active'|'completed'|'left';position:number;leaseExpiresAt:string|null};}
 function version(value:unknown){if(!object(value)||!uuid(value.id)||!hash(value.sha256)||!Number.isInteger(value.signatureCount)||typeof value.createdAt!=='string'||typeof value.current!=='boolean')throw unavailable();return value as {id:string;sha256:string;signatureCount:number;createdAt:string;current:boolean};}
 function incident(value:unknown){if(!object(value)||!uuid(value.id)||typeof value.status!=='string')throw unavailable();return value as {id:string;status:string};}
+function finalShare(value:unknown){if(!object(value)||!uuid(value.id)||!uuid(value.documentId)||typeof value.expiresAt!=='string')throw unavailable();return value as {id:string;documentId:string;expiresAt:string};}
 
 function publicProcess(value:unknown){
  if(!object(value)||!uuid(value.id)||!filename(value.filename)||value.status!=='ready_for_signer'||!Number.isInteger(value.signerCount))throw unavailable();
@@ -77,5 +78,7 @@ export function createSupabaseRepositories(database:Database,validator:Validator
   listVersions(documentId:string,actorId:string){return database.rpc('v2_list_process_versions',{p_document_id:documentId,p_actor_id:actorId},value=>{if(!Array.isArray(value)||value.length>100)throw unavailable();return value.map(version);});},
   listIncidents(documentId:string,actorId:string){return database.rpc('v2_list_process_incidents',{p_document_id:documentId,p_actor_id:actorId},value=>{if(!Array.isArray(value)||value.length>100)throw unavailable();return value.map(incident);});},
   reportIncident(input:{documentId:string;actorId:string;reason:string;note:string}){return database.rpc('v2_report_process_incident',{p_document_id:input.documentId,p_actor_id:input.actorId,p_reason:input.reason,p_note:input.note},incident);},
+  createFinalShare(input:{documentId:string;ownerId:string;tokenHash:string;expiresAt:string}){return database.rpc('v2_create_final_share',{p_document_id:input.documentId,p_owner_id:input.ownerId,p_token_hash:input.tokenHash,p_expires_at:input.expiresAt},finalShare);},
+  async resolveFinalShare(input:{shareId:string;tokenHash:string}){const meta=await database.rpc('v2_resolve_final_share',{p_share_id:input.shareId,p_token_hash:input.tokenHash},download);const pdf=await database.readPrivateObject(meta.storagePath,meta.byteSize);if(pdf.length!==meta.byteSize||digest(pdf)!==meta.sha256)throw unavailable();return{filename:meta.filename,expiresAt:(meta as typeof meta&{expiresAt:string}).expiresAt,pdf};},
  };
 }

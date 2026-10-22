@@ -1,0 +1,3 @@
+const valid=(value:string)=>/^[A-Za-z0-9_-]{43}$/.test(value);
+export async function hashFinalShareToken(token:string){if(!valid(token))throw Error('INVALID_TOKEN');return[...new Uint8Array(await crypto.subtle.digest('SHA-256',new TextEncoder().encode(`leapsign-v2-final:${token}`)))].map(byte=>byte.toString(16).padStart(2,'0')).join('');}
+export async function validateFinalShareToken(token:string,expected:string){if(!valid(token)||!/^[a-f0-9]{64}$/.test(expected))return false;const actual=await hashFinalShareToken(token);let different=0;for(let index=0;index<64;index++)different|=actual.charCodeAt(index)^expected.charCodeAt(index);return different===0;}

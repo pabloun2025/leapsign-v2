@@ -1,0 +1,9 @@
+import {describe,expect,it,vi} from 'vitest';
+import {createFinalShareHandler,type FinalShareDependencies} from '../server/v2/final-share-api';
+const origin='https://pruebas.leapsign.app',owner='11111111-1111-4111-8111-111111111111',doc='22222222-2222-4222-8222-222222222222',share='33333333-3333-4333-8333-333333333333',token='A'.repeat(43);
+function fixture(){const deps:FinalShareDependencies={authenticate:vi.fn(async()=>owner),reserve:vi.fn(async()=>{}),randomToken:()=>token,digest:vi.fn(async()=> 'a'.repeat(64)),create:vi.fn(async()=>({id:share,documentId:doc,expiresAt:'2026-10-24T00:00:00Z'})),resolve:vi.fn(async()=>({filename:'final.pdf',expiresAt:'2026-10-24T00:00:00Z',pdf:new Uint8Array([37,80,68,70,45])}))};return{deps,handle:createFinalShareHandler(deps,origin)};}
+describe('v2 final share API',()=>{
+ it('creates a capability without persisting the raw token',async()=>{const f=fixture();const response=await f.handle(new Request(`${origin}/api/v2/processes/${doc}/final-share`,{method:'POST',headers:{Origin:origin,'X-LeapSign-Client':'v2'}}));expect(response.status).toBe(201);expect(f.deps.create).toHaveBeenCalledWith(expect.objectContaining({documentId:doc,ownerId:owner,tokenHash:'a'.repeat(64)}));expect(await response.json()).toMatchObject({url:`${origin}/final/${share}#token=${token}`});});
+ it('downloads only with a header capability and no metadata',async()=>{const f=fixture();const response=await f.handle(new Request(`${origin}/api/v2/final/${share}`,{headers:{'X-LeapSign-Client':'v2','X-LeapSign-Final':token}}));expect(response.status).toBe(200);expect(response.headers.get('Content-Type')).toBe('application/pdf');});
+ it('rejects cross-origin creation',async()=>{const f=fixture();const response=await f.handle(new Request(`${origin}/api/v2/processes/${doc}/final-share`,{method:'POST',headers:{Origin:'https://evil.invalid','X-LeapSign-Client':'v2'}}));expect(response.status).toBe(403);});
+});
